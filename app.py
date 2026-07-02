@@ -168,6 +168,9 @@ st.markdown("""
 st.sidebar.title("🧬 Corvus Bio Controls")
 st.sidebar.markdown("---")
 
+installed_models = get_ollama_models()
+model_choice = st.sidebar.selectbox("Ollama Model:", installed_models, key="rag_model_choice")
+
 DATASET_DIR = "dataset"
 CLINICAL_PAPERS_PATH = os.path.join(DATASET_DIR, "ranked_papers.csv")
 CLAIMS_PATH = os.path.join(DATASET_DIR, "claims.csv")
@@ -516,8 +519,7 @@ user_question = st.sidebar.text_input(
     placeholder="e.g., Does metformin decrease cancer recurrence?",
     key="rag_user_question"
 )
-installed_models = get_ollama_models()
-model_choice = st.sidebar.selectbox("Ollama Model:", installed_models, key="rag_model_choice")
+
 
 if st.sidebar.button("Query LLM") and user_question:
     with st.sidebar.status("Searching dataset & calling Ollama...", expanded=True) as status:
@@ -526,7 +528,8 @@ if st.sidebar.button("Query LLM") and user_question:
         retrieved_claims = []
 
         # 1. Encode user question semantically
-        query_emb = encoder_model.encode([user_question], normalize_embeddings=True)[0]
+        corrected_question = graph_rag.preprocess_query(user_question)
+        query_emb = encoder_model.encode([corrected_question], normalize_embeddings=True)[0]
 
         # 2. Semantic Search on Papers
         if ranked_df is not None and "embedding" in ranked_df.columns:

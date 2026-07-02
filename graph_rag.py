@@ -81,6 +81,30 @@ def load_data(
     return df, contradictions
 
 
+def preprocess_query(query: str) -> str:
+    """Preprocess query to clean punctuation and correct common typos like 'metaformin'."""
+    import difflib
+    
+    # Common domain vocabulary
+    vocab = [
+        "metformin", "breast", "cancer", "survival", "chemotherapy", "toxicity", 
+        "synergy", "her2", "triple-negative", "rct", "cohort", "clinical", 
+        "trial", "recurrence", "prevention", "diabetes", "insulin"
+    ]
+    
+    words = query.split()
+    corrected = []
+    for w in words:
+        clean = w.strip("?,.:;!\"'()").lower()
+        if len(clean) > 4:
+            matches = difflib.get_close_matches(clean, vocab, n=1, cutoff=0.7)
+            if matches:
+                corrected.append(matches[0])
+                continue
+        corrected.append(w)
+    return " ".join(corrected)
+
+
 def get_standard_rag_context(
     query: str,
     encoder_model: SentenceTransformer,
@@ -88,7 +112,8 @@ def get_standard_rag_context(
     top_k: int = 3
 ) -> Tuple[str, List[Dict[str, Any]]]:
     """Retrieve top K papers based on vector similarity and format the context string."""
-    query_emb = encoder_model.encode([query], normalize_embeddings=True)[0]
+    corrected_query = preprocess_query(query)
+    query_emb = encoder_model.encode([corrected_query], normalize_embeddings=True)[0]
     
     if "embedding" not in ranked_df.columns:
         # Fallback to top evidence score if embeddings are missing

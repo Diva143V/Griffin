@@ -20,26 +20,23 @@ df["abstract"] = (
     .str.lower()
 )
 
-# Keep only breast cancer + metformin papers
-filtered_df = df[
-    (
-        df["title"].str.contains(
-            "metformin"
-        ) |
-        df["abstract"].str.contains(
-            "metformin"
-        )
-    )
-    &
-    (
-        df["title"].str.contains(
-            "breast cancer"
-        ) |
-        df["abstract"].str.contains(
-            "breast cancer"
-        )
-    )
-]
+# Keep only breast cancer + metformin papers, and exclude papers primarily about other drugs (like GLP-1)
+is_metformin = (
+    df["title"].str.contains("metformin") |
+    df["abstract"].str.contains("metformin")
+)
+is_breast_cancer = (
+    df["title"].str.contains("breast cancer") |
+    df["abstract"].str.contains("breast cancer")
+)
+
+# Exclude papers where title contains GLP-1 or other specific drug classes unless title also contains metformin
+has_other_drug_in_title = df["title"].str.contains("glp-1|glp1|semaglutide|liraglutide|sglt2", regex=True)
+has_metformin_in_title = df["title"].str.contains("metformin")
+exclude_mask = has_other_drug_in_title & ~has_metformin_in_title
+
+filtered_df = df[is_metformin & is_breast_cancer & ~exclude_mask]
+
 
 print("After filtering:",
       len(filtered_df))
