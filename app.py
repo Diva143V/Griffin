@@ -582,6 +582,65 @@ sc_api_key = st.sidebar.text_input(
     help="Optional, unlocks Semantic Scholar searches.",
     key="sc_api_key_input"
 )
+# LLM Model Routing block
+st.sidebar.subheader("🤖 LLM Model Routing")
+routing_mode = st.sidebar.radio(
+    "Routing Strategy:",
+    ["Default Optimized Mixture", "Custom Specialist Routing"],
+    index=0,
+    help="Default uses a curated list of models optimized for each specific task. Custom lets you assign specific models."
+)
+
+model_routing = {}
+if routing_mode == "Custom Specialist Routing":
+    st.sidebar.markdown("<small>Assign models to pipeline stages:</small>", unsafe_allow_html=True)
+    model_routing["planner"] = st.sidebar.selectbox(
+        "Query Planner / Router:",
+        installed_models,
+        index=installed_models.index("gemma3:4b") if "gemma3:4b" in installed_models else 0,
+        key="route_planner"
+    )
+    model_routing["claim_extractor"] = st.sidebar.selectbox(
+        "Claim Extractor Agent:",
+        installed_models,
+        index=installed_models.index("gemma3:4b") if "gemma3:4b" in installed_models else 0,
+        key="route_claim_extractor"
+    )
+    model_routing["contradiction_detector"] = st.sidebar.selectbox(
+        "Contradiction Detector:",
+        installed_models,
+        index=installed_models.index("qwen3.5:9b") if "qwen3.5:9b" in installed_models else 0,
+        key="route_contradiction_detector"
+    )
+    model_routing["consensus_analyst"] = st.sidebar.selectbox(
+        "Consensus Analyst:",
+        installed_models,
+        index=installed_models.index("koesn/llama3-openbiollm-8b:latest") if "koesn/llama3-openbiollm-8b:latest" in installed_models else 0,
+        key="route_consensus_analyst"
+    )
+    model_routing["synthesis"] = st.sidebar.selectbox(
+        "Synthesis / generator:",
+        installed_models,
+        index=installed_models.index("gemma3:4b") if "gemma3:4b" in installed_models else 0,
+        key="route_synthesis"
+    )
+    model_routing["experiment_planner"] = st.sidebar.selectbox(
+        "Protocol & ELN Agent:",
+        installed_models,
+        index=installed_models.index("gemma3:4b") if "gemma3:4b" in installed_models else 0,
+        key="route_experiment_planner"
+    )
+else:
+    model_routing = {
+        "planner": "gemma3:4b",
+        "claim_extractor": "gemma3:4b",
+        "contradiction_detector": "qwen3.5:9b",
+        "consensus_analyst": "koesn/llama3-openbiollm-8b:latest",
+        "synthesis": "gemma3:4b",
+        "experiment_planner": "gemma3:4b"
+    }
+
+st.sidebar.markdown("---")
 
 st.title("🧬 Griffin Bio Dashboard")
 st.caption("Scientific evidence synthesis, contradiction detection, and research exploration")
@@ -684,7 +743,8 @@ with tabs[0]:
                 email=pubmed_email,
                 api_key=sc_api_key,
                 forced_agents=forced_agents,
-                force_fresh=force_fresh
+                force_fresh=force_fresh,
+                model_routing=model_routing
             )
             # Reload datasets in memory so the sidebar and metrics update to the new topic
             ranked_df, claims_df, contradictions, synthesis_text = load_data()
@@ -709,6 +769,34 @@ with tabs[0]:
                 if trace.get("findings"):
                     for finding in trace["findings"]:
                         st.markdown(f"- *{finding}*")
+        
+        # LLM Routing & Performance Summary
+        if "routing_stats" in execution:
+            with st.expander("🤖 LLM Routing & Performance Summary", expanded=True):
+                stats_data = []
+                for stage, details in execution["routing_stats"].items():
+                    fallback_alert = "✅ OK"
+                    if details.get("fallback_logs"):
+                        fallback_alert = "⚠️ Sibling / Fallback Used"
+                    
+                    stats_data.append({
+                        "Stage": stage.replace("_", " ").title(),
+                        "Requested Model": details.get("requested"),
+                        "Resolved Model": details.get("resolved"),
+                        "Latency (sec)": f"{details.get('duration_sec', 0.0):.2f}s",
+                        "Status": fallback_alert
+                    })
+                
+                stats_df = pd.DataFrame(stats_data)
+                st.dataframe(stats_df, use_container_width=True, hide_index=True)
+                
+                # If there are fallback logs, show them as warnings
+                all_fb_logs = []
+                for details in execution["routing_stats"].values():
+                    if details.get("fallback_logs"):
+                        all_fb_logs.extend(details["fallback_logs"])
+                if all_fb_logs:
+                    st.warning("  \n".join(all_fb_logs))
         
         # Show Consensus Agent Report
         if execution.get("consensus"):

@@ -10,6 +10,7 @@ import os
 import sys
 import json
 import subprocess
+import time
 from typing import Any, Dict, Optional, List, Tuple
 
 import pandas as pd
@@ -23,6 +24,49 @@ from .verifier_agent import verify_response
 from .consensus_agent import analyze_consensus
 from .experiment_agent import design_protocol
 from .eln_agent import format_eln_entry
+from typing import Any, Dict, List, Optional, Tuple
+
+def get_valid_model(requested_model: str, fallback_priority: List[str] = None) -> Tuple[str, List[str]]:
+    """Check if requested_model exists in Ollama's local list. If not, pick a fallback.
+    Returns (resolved_model_name, list_of_warning_notes).
+    """
+    notes = []
+    try:
+        model_list = ollama.list()
+        installed_models = [m.model for m in model_list.models]
+    except Exception as e:
+        return requested_model, [f"Warning: Failed to contact Ollama for model check: {e}"]
+
+    if not installed_models:
+        return requested_model, ["Warning: No models found installed in Ollama. Attempting to use requested model."]
+
+    def clean_name(n: str) -> str:
+        return n.split(":")[0].strip().lower()
+
+    # 1. Exact match
+    for m in installed_models:
+        if m == requested_model:
+            return requested_model, []
+
+    # 2. Tagless match (e.g. gemma3:4b matching gemma3:latest or gemma3)
+    req_clean = clean_name(requested_model)
+    for m in installed_models:
+        if clean_name(m) == req_clean:
+            notes.append(f"Model '{requested_model}' not found exactly. Using installed sibling '{m}'.")
+            return m, notes
+
+    # 3. Fallback priority match
+    if fallback_priority:
+        for fb in fallback_priority:
+            for m in installed_models:
+                if m == fb or clean_name(m) == clean_name(fb):
+                    notes.append(f"Model '{requested_model}' not found. Falling back to priority model '{m}'.")
+                    return m, notes
+
+    # 4. Grab first available model as absolute fallback
+    first_avail = installed_models[0]
+    notes.append(f"Model '{requested_model}' not found. Falling back to first available model '{first_avail}'.")
+    return first_avail, notes
 
 
 def check_and_trigger_retrieval(query: str, encoder_model: Any, top_k: int) -> Tuple[bool, str]:
@@ -251,9 +295,53 @@ def execute_query_plan(
     email: str = "test@example.com",
     api_key: str = "",
     forced_agents: Optional[List[str]] = None,
-    force_fresh: bool = False
+    force_fresh: bool = False,
+    model_routing: Optional[Dict[str, str]] = None
 ) -> Dict[str, Any]:
-    model_name = plan.model or "gemma3:4b"
+    # Resolve routing config
+    default_routing = {
+        "planner": "gemma3:4b",
+        "claim_extractor": "gemma3:4b",
+        "contradiction_detector": "qwen3.5:9b",
+        "consensus_analyst": "koesn/llama3-openbiollm-8b:latest",
+        "synthesis": "gemma3:4b",
+        "experiment_planner": "gemma3:4b"
+    }
+    
+    routing = dict(default_routing)
+    if model_routing:
+        for k, v in model_routing.items():
+            if v:
+                routing[k] = v
+
+    # Resolve models using get_valid_model with fallbacks
+    resolved_routing = {}
+    fallback_logs = []
+    
+    fallbacks_by_key = {
+        "planner": ["gemma3:4b", "gemma3:1b", "llama3.1:8b", "qwen3.5:9b", "llama3.1:latest"],
+        "claim_extractor": ["gemma3:4b", "gemma3:1b", "llama3.1:8b", "qwen3.5:9b", "llama3.1:latest"],
+        "contradiction_detector": ["qwen3.5:9b", "llama3.1:8b", "gemma3:4b", "gemma3:1b", "llama3.1:latest"],
+        "consensus_analyst": ["koesn/llama3-openbiollm-8b:latest", "llama3.1:8b", "qwen3.5:9b", "gemma3:4b", "gemma3:1b"],
+        "synthesis": ["gemma3:4b", "gemma3:1b", "llama3.1:8b", "qwen3.5:9b", "llama3.1:latest"],
+        "experiment_planner": ["gemma3:4b", "gemma3:1b", "llama3.1:8b", "qwen3.5:9b", "llama3.1:latest"]
+    }
+
+    for key, req_model in routing.items():
+        res_model, warn_notes = get_valid_model(req_model, fallbacks_by_key.get(key))
+        resolved_routing[key] = res_model
+        if warn_notes:
+            fallback_logs.extend([f"[{key}] {n}" for n in warn_notes])
+
+    # Stats tracking structure
+    routing_stats = {
+        "planner": {"requested": routing["planner"], "resolved": resolved_routing["planner"], "duration_sec": 0.0, "fallback_logs": [n for n in fallback_logs if n.startswith("[planner]")]},
+        "claim_extractor": {"requested": routing["claim_extractor"], "resolved": resolved_routing["claim_extractor"], "duration_sec": 0.0, "fallback_logs": [n for n in fallback_logs if n.startswith("[claim_extractor]")]},
+        "contradiction_detector": {"requested": routing["contradiction_detector"], "resolved": resolved_routing["contradiction_detector"], "duration_sec": 0.0, "fallback_logs": [n for n in fallback_logs if n.startswith("[contradiction_detector]")]},
+        "consensus_analyst": {"requested": routing["consensus_analyst"], "resolved": resolved_routing["consensus_analyst"], "duration_sec": 0.0, "fallback_logs": [n for n in fallback_logs if n.startswith("[consensus_analyst]")]},
+        "synthesis": {"requested": routing["synthesis"], "resolved": resolved_routing["synthesis"], "duration_sec": 0.0, "fallback_logs": [n for n in fallback_logs if n.startswith("[synthesis]")]},
+        "experiment_planner": {"requested": routing["experiment_planner"], "resolved": resolved_routing["experiment_planner"], "duration_sec": 0.0, "fallback_logs": [n for n in fallback_logs if n.startswith("[experiment_planner]")]}
+    }
     
     def parse_emb(val):
         if isinstance(val, str):
@@ -272,7 +360,9 @@ def execute_query_plan(
         ranked_df["embedding"] = ranked_df["embedding"].apply(parse_emb)
 
     # 0. Clean the query first to remove conversational filler/instructions
-    search_query = clean_search_query(plan.query, model_name)
+    planner_start = time.time()
+    search_query = clean_search_query(plan.query, resolved_routing["planner"])
+    routing_stats["planner"]["duration_sec"] += time.time() - planner_start
 
     # 1. Check database for existing relevant papers using the clean scientific search query
     if force_fresh:
@@ -283,10 +373,12 @@ def execute_query_plan(
     print(check_msg)
     
     notes = [check_msg]
+    if fallback_logs:
+        notes.extend([f"⚠️ {log}" for log in fallback_logs])
     
     if not is_present:
         try:
-            ingest_logs = run_pipeline_ingestion(search_query, email=email, api_key=api_key, model_name=model_name, top_k=plan.top_k)
+            ingest_logs = run_pipeline_ingestion(search_query, email=email, api_key=api_key, model_name=resolved_routing["planner"], top_k=plan.top_k)
             notes.extend(ingest_logs)
             # Reload datasets
             if os.path.exists("dataset/ranked_papers.csv"):
@@ -366,12 +458,14 @@ def execute_query_plan(
                     notes.append(f"Failed to restore papers from Chroma DB: {ex}")
 
     # 1b. Call the Executor LLM Router or use the user's manual selection
+    executor_start = time.time()
     if forced_agents is not None:
         executed_agents = forced_agents
         notes.append(f"User Manually Selected Agents: {', '.join(executed_agents)}")
     else:
-        executed_agents = route_executor(plan.query, model_name)
+        executed_agents = route_executor(plan.query, resolved_routing["planner"])
         notes.append(f"Executor LLM Routed Request to: {', '.join(executed_agents)}")
+    routing_stats["planner"]["duration_sec"] += time.time() - executor_start
 
     result: Dict[str, Any] = {
         "plan": plan_to_dict(plan),
@@ -393,6 +487,7 @@ def execute_query_plan(
         ],
         "sections": [section.__dict__ for section in plan.sections],
         "edges": [edge.__dict__ for edge in plan.edges],
+        "routing_stats": routing_stats
     }
 
     if ranked_df is None or ranked_df.empty:
@@ -440,11 +535,12 @@ def execute_query_plan(
         system_content = "You are a senior scientific research analyst. Answer the user's question using the scientific evidence provided. Provide a highly detailed, comprehensive, and exhaustive scientific synthesis. Elaborate on the mechanisms of action, clinical evidence, study designs, sample sizes, and outcomes."
         user_content = f"USER QUESTION: {plan.query}\n\nCONTEXT: {result['context']}\n\nPlease cite specific sources using identifiers like [Source Paper X] or [Graph Connection Y]. Address any contradictions in detail."
 
+        synthesis_start = time.time()
         for attempt in range(1, 4):
             # Generate synthesis
             try:
                 response = ollama.chat(
-                    model=model_name,
+                    model=resolved_routing["synthesis"],
                     messages=[
                         {"role": "system", "content": system_content},
                         {"role": "user", "content": user_content}
@@ -469,6 +565,7 @@ def execute_query_plan(
                 # Append feedback to prompt for next attempt
                 findings_str = "\n".join(f"- {f}" for f in verify_res.get("findings", []))
                 user_content += f"\n\n[Verification Feedback - Attempt {attempt} Failed]\nFindings:\n{findings_str}\nPlease correct the above citation or logical consistency issues in your updated answer."
+        routing_stats["synthesis"]["duration_sec"] = round(time.time() - synthesis_start, 2)
 
         result["synthesis_answer"] = synthesis_answer
         result["verification"] = verification_trace[-1] if verification_trace else {"status": "pass", "findings": []}
@@ -479,7 +576,9 @@ def execute_query_plan(
 
     # 5. Run Consensus Agent - Dynamic Execution
     if "consensus_analyst" in executed_agents:
-        consensus_res = analyze_consensus(plan.query, result.get("sources", []), result.get("relations", []), model_name=model_name)
+        consensus_start = time.time()
+        consensus_res = analyze_consensus(plan.query, result.get("sources", []), result.get("relations", []), model_name=resolved_routing["consensus_analyst"])
+        routing_stats["consensus_analyst"]["duration_sec"] = round(time.time() - consensus_start, 2)
         result["consensus"] = consensus_res
         try:
             os.makedirs("dataset", exist_ok=True)
@@ -490,7 +589,8 @@ def execute_query_plan(
 
     # 6. Run Experiment Agent - Dynamic Execution
     if "experiment_planner" in executed_agents:
-        experiment_res = design_protocol(plan.query, synthesis_answer or plan.query, model_name=model_name)
+        exp_start = time.time()
+        experiment_res = design_protocol(plan.query, synthesis_answer or plan.query, model_name=resolved_routing["experiment_planner"])
         result["experiment_protocol"] = experiment_res["protocol_draft"]
         try:
             os.makedirs("dataset", exist_ok=True)
@@ -501,7 +601,7 @@ def execute_query_plan(
 
         # 7. Run ELN Agent - Dynamic Execution
         if "eln_assistant" in executed_agents:
-            eln_res = format_eln_entry("Dr. Scientist", "Metformin Oncology Project", experiment_res["protocol_draft"], "Pre-incubated cells for 24h before treatment.", model_name=model_name)
+            eln_res = format_eln_entry("Dr. Scientist", "Metformin Oncology Project", experiment_res["protocol_draft"], "Pre-incubated cells for 24h before treatment.", model_name=resolved_routing["experiment_planner"])
             result["eln_entry"] = eln_res["eln_entry"]
             try:
                 os.makedirs("dataset", exist_ok=True)
@@ -509,6 +609,7 @@ def execute_query_plan(
                     f.write(eln_res["eln_entry"])
             except Exception:
                 pass
+        routing_stats["experiment_planner"]["duration_sec"] = round(time.time() - exp_start, 2)
 
     if "synthesis_answer" in result and result["synthesis_answer"]:
         try:
@@ -519,3 +620,4 @@ def execute_query_plan(
             pass
 
     return result
+
