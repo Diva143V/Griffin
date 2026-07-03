@@ -646,12 +646,12 @@ if routing_mode == "Custom Specialist Routing":
     )
 else:
     model_routing = {
-        "planner": "gemma3:4b",
-        "claim_extractor": "gemma3:4b",
+        "planner": "llama3.1:8b",
+        "claim_extractor": "llama3.1:8b",
         "contradiction_detector": "qwen3.5:9b",
         "consensus_analyst": "koesn/llama3-openbiollm-8b:latest",
-        "synthesis": "gemma3:4b",
-        "experiment_planner": "gemma3:4b"
+        "synthesis": "llama3.1:8b",
+        "experiment_planner": "llama3.1:8b"
     }
 
 st.sidebar.markdown("---")
