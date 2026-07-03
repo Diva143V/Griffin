@@ -9,7 +9,7 @@ from typing import Any, Dict, List
 import pandas as pd
 from sentence_transformers import SentenceTransformer
 
-from graph_rag import (
+from src.core.graph_rag import (
     generate_answer,
     get_graph_rag_context,
     get_standard_rag_context,
@@ -168,7 +168,7 @@ def save_markdown_report(benchmark_data: Dict[str, Any], output_path: str = "dat
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluate Standard RAG vs Graph RAG performance")
-    parser.add_argument("--model", default="qwen3.5:latest", help="Ollama model to use for evaluation")
+    parser.add_argument("--model", default="qwen3.5:9b", help="Ollama model to use for evaluation")
     parser.add_argument("--top-k", type=int, default=3, help="Top K papers to retrieve")
     parser.add_argument("--output", default="dataset/rag_performance_report.md", help="Path to save markdown report")
     args = parser.parse_args()

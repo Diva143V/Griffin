@@ -1,52 +1,42 @@
+import argparse
 import pandas as pd
 
-df = pd.read_csv(
-    "dataset/final_papers.csv"
-)
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--query", default="")
+    args = parser.parse_args()
 
-print("Before filtering:",
-      len(df))
+    df = pd.read_csv("dataset/final_papers.csv")
+    print("Before filtering:", len(df))
 
-# Convert to lowercase
-df["title"] = (
-    df["title"]
-    .fillna("")
-    .str.lower()
-)
+    # Convert to lowercase
+    df["title_clean"] = df["title"].fillna("").str.lower()
+    df["abstract_clean"] = df["abstract"].fillna("").str.lower()
 
-df["abstract"] = (
-    df["abstract"]
-    .fillna("")
-    .str.lower()
-)
+    if args.query:
+        # Extract keywords of length > 3, excluding common stop words
+        stop_words = {"does", "what", "associated", "with", "from", "therapy", "disease", "treatment", "effect", "effects", "risk", "reduce", "improves", "improve", "levels", "level", "cancer"}
+        words = [w.strip().replace("?", "").replace(".", "").replace(",", "").lower() for w in args.query.split()]
+        keywords = [w for w in words if len(w) > 3 and w not in stop_words]
+        
+        if keywords:
+            print("Filtering with keywords:", keywords)
+            title_pat = "|".join(keywords)
+            filtered_df = df[
+                df["title_clean"].str.contains(title_pat, na=False) |
+                df["abstract_clean"].str.contains(title_pat, na=False)
+            ].copy()
+        else:
+            filtered_df = df.copy()
+    else:
+        filtered_df = df.copy()
 
-# Keep only breast cancer + metformin papers
-filtered_df = df[
-    (
-        df["title"].str.contains(
-            "metformin"
-        ) |
-        df["abstract"].str.contains(
-            "metformin"
-        )
-    )
-    &
-    (
-        df["title"].str.contains(
-            "breast cancer"
-        ) |
-        df["abstract"].str.contains(
-            "breast cancer"
-        )
-    )
-]
+    # Clean up temporary column
+    filtered_df = filtered_df.drop(columns=["title_clean", "abstract_clean"], errors="ignore")
 
-print("After filtering:",
-      len(filtered_df))
+    print("After filtering:", len(filtered_df))
+    filtered_df.to_csv("dataset/clean_papers.csv", index=False)
+    print("Saved clean_papers.csv")
 
-filtered_df.to_csv(
-    "dataset/clean_papers.csv",
-    index=False
-)
-
-print("Saved clean_papers.csv")
+if __name__ == "__main__":
+    main()

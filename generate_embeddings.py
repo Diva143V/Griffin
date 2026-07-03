@@ -14,13 +14,16 @@ import hashlib
 import json
 import os
 from datetime import datetime
-from typing import Dict, List
+from typing import Dict, List, Any
 
 import pandas as pd
 from sentence_transformers import SentenceTransformer
+import chromadb
 
 
 DEFAULT_MODEL = "all-MiniLM-L6-v2"
+DEFAULT_DB_PATH = "dataset/chroma_db"
+DEFAULT_COLLECTION = "papers"
 
 
 def make_embedding_key(text: str, model_name: str) -> str:
@@ -73,7 +76,7 @@ def load_embedding_cache(path: str, model_name: str) -> Dict[str, List[float]]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Generate sentence embeddings for cleaned papers")
+    parser = argparse.ArgumentParser(description="Generate sentence embeddings for cleaned papers and index into Chroma DB")
     parser.add_argument("--input", default="dataset/clean_papers.csv")
     parser.add_argument("--output", default="dataset/clean_papers_with_embeddings.csv")
     parser.add_argument("--model", default=DEFAULT_MODEL)
@@ -81,6 +84,9 @@ def main() -> None:
     parser.add_argument("--include-title", action="store_true", help="Include title together with abstract in the embedding text")
     parser.add_argument("--max-rows", type=int, default=None, help="Optional limit for quick experiments")
     parser.add_argument("--no-cache", action="store_true", help="Do not reuse cached embeddings from the output file")
+    parser.add_argument("--db-path", default=DEFAULT_DB_PATH, help="Directory to store Chroma DB data")
+    parser.add_argument("--collection", default=DEFAULT_COLLECTION, help="Name of the Chroma DB collection")
+    parser.add_argument("--skip-chroma", action="store_true", help="Skip upserting to Chroma DB")
     args = parser.parse_args()
 
     df = pd.read_csv(args.input)
@@ -141,6 +147,61 @@ def main() -> None:
     df.to_csv(args.output, index=False)
     print(f"Embeddings generated with model '{args.model}'")
     print(f"Saved {args.output}")
+
+    # 5. Automatically and incrementally upsert into Chroma DB
+    if not args.skip_chroma:
+        print(f"Initializing Chroma DB client at '{args.db_path}'...")
+        os.makedirs(args.db_path, exist_ok=True)
+        chroma_client = chromadb.PersistentClient(path=args.db_path)
+        
+        # Create/Get the collection
+        collection = chroma_client.get_or_create_collection(
+            name=args.collection,
+            metadata={"hnsw:space": "cosine"}
+        )
+
+        documents: List[str] = []
+        ids: List[str] = []
+        metadatas: List[Dict[str, Any]] = []
+        
+        for idx, row in df.iterrows():
+            doc_text = row["embedding_text"]
+            if not doc_text:
+                continue
+                
+            # Extract metadata
+            metadata = {}
+            for col in df.columns:
+                if col not in ["embedding", "embedding_key", "embedding_text", "embedding_model", "embedding_created_at"]:
+                    val = row[col]
+                    if pd.isna(val):
+                        continue
+                    if isinstance(val, (int, float, str, bool)):
+                        metadata[col] = val
+                    else:
+                        metadata[col] = str(val)
+
+            # Unique key: Prefer pmid or doi, fallback to row indices
+            paper_id = str(row.get("pmid", "")) or str(row.get("doi", "")) or f"paper_{idx}"
+            paper_id = str(paper_id).strip()
+            if not paper_id or paper_id == "nan":
+                paper_id = f"paper_{idx}"
+
+            documents.append(doc_text)
+            ids.append(paper_id)
+            metadatas.append(metadata)
+
+        if documents:
+            print(f"Upserting {len(documents)} papers to Chroma DB collection '{args.collection}'...")
+            collection.upsert(
+                ids=ids,
+                embeddings=embeddings,
+                metadatas=metadatas,
+                documents=documents
+            )
+            print("Chroma DB updated successfully.")
+        else:
+            print("No papers to upsert to Chroma DB.")
 
 
 if __name__ == "__main__":

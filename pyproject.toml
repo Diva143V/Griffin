@@ -1,0 +1,24 @@
+[tool.poetry]
+name = "metformin-breast-cancer-pipeline"
+version = "0.1.0"
+description = "A research dataset pipeline and multi-agent RAG dashboard."
+authors = ["Your Name <you@example.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+requests = "2.31.0"
+beautifulsoup4 = "4.12.2"
+pandas = "2.1.4"
+numpy = "1.24.3"
+lxml = "4.9.3"
+biopython = "1.84"
+ollama = "0.3.3"
+streamlit = "1.37.1"
+sentence-transformers = "2.7.0"
+scikit-learn = "1.5.1"
+chromadb = "0.5.5"
+fpdf2 = "^2.8.7"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"

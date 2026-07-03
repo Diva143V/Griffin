@@ -19,20 +19,9 @@ import argparse
 import os
 import subprocess
 import sys
-from typing import Dict
-
 import pandas as pd
 
-from collect_pmc import collect as collect_pmc
-from collect_pubmed import collect as collect_pubmed
-from collect_semanticscholar import collect as collect_semanticscholar
-
-
-SOURCES: Dict[str, str] = {
-    "PubMed": "dataset/pubmed.csv",
-    "PMC": "dataset/pmc.csv",
-    "SemanticScholar": "dataset/semantic_scholar.csv",
-}
+from src.collectors.collector_registry import get_collector_names, get_selected_collectors, source_paths
 
 
 def ensure_dataset_dir() -> None:
@@ -42,42 +31,18 @@ def ensure_dataset_dir() -> None:
 def run_collectors(query: str, args) -> None:
     ensure_dataset_dir()
 
-    print("Running PubMed collector...")
-    pubmed_df = collect_pubmed(
-        query,
-        email=args.email,
-        batch_size=args.pubmed_batch_size,
-        rate_limit_sec=args.pubmed_rate_limit,
-    )
-    pubmed_df.to_csv(SOURCES["PubMed"], index=False)
-    print(f"Saved {SOURCES['PubMed']} with {len(pubmed_df)} records")
-
-    print("Running Europe PMC collector...")
-    pmc_df = collect_pmc(
-        query,
-        page_size=args.pmc_page_size,
-        max_pages=args.pmc_max_pages,
-        rate_limit_sec=args.pmc_rate_limit,
-    )
-    pmc_df.to_csv(SOURCES["PMC"], index=False)
-    print(f"Saved {SOURCES['PMC']} with {len(pmc_df)} records")
-
-    print("Running Semantic Scholar collector...")
-    ss_df = collect_semanticscholar(
-        query,
-        limit=args.ss_limit,
-        offset=args.ss_offset,
-        max_pages=args.ss_max_pages,
-        delay=args.ss_delay,
-    )
-    ss_df.to_csv(SOURCES["SemanticScholar"], index=False)
-    print(f"Saved {SOURCES['SemanticScholar']} with {len(ss_df)} records")
+    selected = get_selected_collectors(args.sources)
+    for spec in selected:
+        print(f"Running {spec.name} collector...")
+        df = spec.runner(query, args)
+        df.to_csv(spec.output_path, index=False)
+        print(f"Saved {spec.output_path} with {len(df)} records")
 
 
 def merge_and_dedup(output: str, max_results: int | None = None) -> pd.DataFrame:
     frames = []
 
-    for name, path in SOURCES.items():
+    for name, path in source_paths().items():
         if not os.path.exists(path):
             print(f"Source missing: {path} (skipping)")
             continue
@@ -91,7 +56,13 @@ def merge_and_dedup(output: str, max_results: int | None = None) -> pd.DataFrame
             print(f"Failed to read {path}: {exc}")
 
     if not frames:
-        raise RuntimeError("No source CSVs found to merge")
+        print("No source CSVs found to merge. Creating empty dataset.")
+        empty_df = pd.DataFrame(columns=[
+            "title", "abstract", "authors", "journal", "year", "doi", "pmid", "pmcid", 
+            "source", "study_design", "sample_size", "evidence_score"
+        ])
+        empty_df.to_csv(output, index=False)
+        return empty_df
 
     all_papers = pd.concat(frames, ignore_index=True)
     print("Before removing duplicates:", len(all_papers))
@@ -129,6 +100,12 @@ def merge_and_dedup(output: str, max_results: int | None = None) -> pd.DataFrame
 def main() -> None:
     parser = argparse.ArgumentParser(description="Build the paper dataset end-to-end")
     parser.add_argument("--query", default="metformin breast cancer")
+    parser.add_argument(
+        "--sources",
+        nargs="*",
+        default=None,
+        help=f"Collectors to run. Default is all: {', '.join(get_collector_names())}",
+    )
 
     parser.add_argument("--email", default=os.environ.get("ENTREZ_EMAIL", ""), help="Entrez email (or set ENTREZ_EMAIL env var)")
     parser.add_argument("--pubmed-batch-size", type=int, default=100)
@@ -142,6 +119,10 @@ def main() -> None:
     parser.add_argument("--ss-offset", type=int, default=0)
     parser.add_argument("--ss-max-pages", type=int, default=3)
     parser.add_argument("--ss-delay", type=float, default=1.5)
+
+    parser.add_argument("--openalex-per-page", type=int, default=20)
+    parser.add_argument("--openalex-max-pages", type=int, default=2)
+    parser.add_argument("--openalex-rate-limit", type=float, default=1.0)
 
     parser.add_argument("--max-results", type=int, default=100)
     parser.add_argument("--output", default="dataset/final_papers.csv")
@@ -158,7 +139,7 @@ def main() -> None:
 
     if args.run_filter:
         print("Running clean_dataset.py...")
-        subprocess.run([sys.executable, "clean_dataset.py"], check=True)
+        subprocess.run([sys.executable, "clean_dataset.py", "--query", args.query], check=True)
 
 
 if __name__ == "__main__":

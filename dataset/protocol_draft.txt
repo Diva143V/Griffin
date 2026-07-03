@@ -1,0 +1,43 @@
+# Laboratory Protocol: Investigation of Metformin Synergy in HER2-Positive Breast Cancer Model Systems
+
+## 1. Experimental Hypothesis
+The primary hypothesis for this experiment is that concomitant administration of Metformin and a Pan-Her inhibitor (Neratinib) induces superior cytotoxicity and apoptotic signaling modulation compared to either agent alone in Human Epidermal Growth Factor Receptor 2-positive (HER2+) breast cancer cells.
+
+**Specific Aim:** To determine if the combination therapy results in significant downregulation of canonical survival nodes (ERK1/2, AKT, p38 MAPK, mTOR) and a reduction in cell viability that exceeds established cytotoxic thresholds for single-agent controls.
+
+---
+
+## 2. Materials & Reagents
+
+### Cell Lines
+*   **HER2+ Breast Cancer Cell Line:** SKBR-3 or BT-474 (ATCC verified stock). *Note: Selection based on robust HER2 expression.*
+    *   Culture Medium: RPMI 1640 supplemented with 10% FBS, L-glutamine.
+
+### Pharmacological Agents & Reagents
+*   **Metformin Hydrochloride:** Prepared as a concentrated stock (e.g., 5 M in sterile water).
+*   **Neratinib** (or equivalent Pan-HER TKI for lab availability): Concentrated DMSO stock. *Note: Verify solubility limit and vehicle control requirements.*
+    *   *Alternative if Neratinib unavailable:* Trastuzumab or Lapatinib can be substituted to assess HER2 inhibition synergy, provided dosing is adjusted accordingly (Trastuzumab requires different handling).
+*   **Positive Control Agent:** Doxorubicin Hydrochloride or Paclitaxel. Used for maximum viability reduction baseline in parallel wells only.
+
+### Assay Kits & Consumables
+*   **Viability Dye/Reagent:** CellTiter-Glo® Luminescent Cell Viability Kit (Promega) OR MTT/CCK-8 Reagents.
+    *   *Preference:* CellTiter-Glo is preferred for luminescence to reduce background and allow higher sensitivity in 384-well formats or low-density plates.
+*   **SDS-PAGE/Western Blot Kit:** Pre-made protein ladder, Transfer membranes (PVDF/Polyamide), Antibodies: Anti-p-AKT, Total AKT, p-ERK1/2, mTOR, Caspase-3 Cleaved forms, GAPDH (loading control).
+*   **Blocking Buffer & Primary/Anti-secondary antibodies.**
+
+### Equipment
+*   CO₂ Incubator (5% or 3.7%, temperature monitored < 4°C for cryostorage if needed, maintained at 37±0.5 °C during experiments)
+    *   Plate Shaker/Incubation Hood for drug preparation to prevent precipitation in DMSO-based agents where applicable.
+
+---
+
+## 3. Step-by-Step Procedure
+
+### Phase I: Cell Preparation & Seeding (Day -1 or Day of Start depending on protocol)
+1.  **Harvesting:** Harvest healthy HER2+ breast cancer cells from T75 culture flasks using Trypsin-EDTA. Centrifuge at ~300 x g for 5 minutes to remove serum-free buffer. Resuspend pellet in fresh media containing required growth factors (if applicable).
+2.  **Counting:** Dilute cell suspension with complete RPMI + FBS and adjust density to 1 × 10⁵ cells/mL. Count using a hemocytometer or automated counter; viability should be >95%.
+3.  **Plating:** Transfer appropriate aliquots into sterile polypropylene plates (6-well for WB, 24/96-wells for Viability). *Note: For high-throughput synergy screening, use CellTiter-Glo in 384-well microplates.*
+
+### Phase II: Drug Treatment Regimen
+1.  **Treatment Solution Preparation:** Prepare fresh Metformin working solutions immediately prior to treatment (high concentrations >50 µM can cause precipitation over time if stock is aged). Ensure Neratinib stocks are filtered via a sterile filter or vortexed with sonication to ensure homogeneity in DMSO vehicle (<2% total final concentration per cell media limit unless specified by agent stability profile).
+    *   **Metformin Concentrations:** 0, 1 mM, 5 mM, and 10 mM. (Clinical equivalent concentrations typically require high millimolar range for efficacy in vitro; adjust based on preliminary IC

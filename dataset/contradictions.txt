@@ -1,160 +1,95 @@
 ======================================================================
 CONTRADICTION DETECTION REPORT
-Generated: 2026-06-14T08:12:16+00:00
+Generated: 2026-07-02T14:57:26+00:00
 Model: llama3.1:8b | Embeddings: all-MiniLM-L6-v2
-Claims: 50 | Pairs analysed: 50
+Claims: 30 | Pairs analysed: 20
 ======================================================================
 
-CONTRADICTIONS (2)
+CONTRADICTIONS (0)
 ----------------------------------------
-  [0.90] metformin triggers apoptosis via endoplasmic retic vs wbp2 attenuates metformin response in her2-positiv
-         Claim A supports the effectiveness of metformin in HER2-positive breast cancer cell lines, while Claim B contradicts this by stating that WBP2 attenuates its effect
-  [0.90] metformin enhances response to chemotherapy combin vs wbp2 attenuates metformin response in her2-positiv
-         Claim A suggests that metformin enhances chemotherapy and immunotherapy response, while Claim B indicates that WBP2 attenuates the metformin response in HER2-positive breast cancer cells.
 
-AGREEMENTS (12)
+AGREEMENTS (11)
 ----------------------------------------
-  [1.00] therapeutic switching of metformin using heterolep vs mtorc1 inhibition by metformin synergizes with den
-         Both claims propose metformin as a cancer treatment, with the first study suggesting Cu(II) and Zn(II) complexes enhance its effects, while the second study combines metformin with nano-curcumin for increased anticancer toxicity.
-  [0.90] relationship between breast cancer and metformin:  vs metformin-mediated glycaemic regulation as a poten
-         Both claims support the potential anti-cancer effects of metformin on breast cancer, although Claim B is more specific about the mechanisms involved.
-  [0.90] metformin-mediated glycaemic regulation as a poten vs metformin impairs breast cancer growth through the
-         Both claims support the anti-cancer effects of metformin in breast cancer, with Claim B providing a specific mechanism for this effect.
-  [0.90] metformin-mediated glycaemic regulation as a poten vs mtorc1 inhibition by metformin synergizes with den
-         Both claims support the idea that metformin has anti-cancer properties in breast cancer cells, although Claim B is more specific about the combination of metformin with dendrosomal nano-curcumin.
-  [0.90] metformin enhances response to chemotherapy combin vs relationship between breast cancer and metformin: 
-         Both claims support the beneficial effects of metformin in breast cancer treatment, albeit with different emphases on chemotherapy and immunotherapy combination.
-  [0.90] relationship between breast cancer and metformin:  vs impact of type 2 diabetes on malignancies of the f
-         Both claims A and B support the role of metformin in managing diabetes-related complications, including cancer risk and outcomes.
-  [0.90] metformin-mediated glycaemic regulation as a poten vs metformin enhances alpelisib sensitivity in her2+ 
-         Claim A and Claim B support each other as they both demonstrate the efficacy of metformin in breast cancer prevention and treatment, with additional benefits when combined with alpelisib.
-  [0.90] therapeutic switching of metformin using heterolep vs metformin-mediated glycaemic regulation as a poten
-         Both claims support the potential anti-cancer effects of metformin, with Claim A focusing on specific metal complexes and Claim B highlighting pre-clinical studies showing its efficacy in inhibiting breast cancer cell growth.
-  [0.90] metformin as an immunometabolic modulator in breas vs relationship between breast cancer and metformin: 
-         Both claims support the potential benefits of metformin in managing or treating breast cancer, although Claim A focuses on immunometabolic modulation and Claim B emphasizes its relationship with diabetes.
-  [0.90] relationship between breast cancer and metformin:  vs mtorc1 inhibition by metformin synergizes with den
-         Both claims suggest that metformin has a beneficial effect on breast cancer, although Claim B provides more specific mechanisms and outcomes.
-  [0.90] metformin triggers apoptosis via endoplasmic retic vs relationship between breast cancer and metformin: 
-         Both claims support the idea that metformin has a beneficial effect on breast cancer, either by triggering apoptosis or having a potential role in managing the relationship between diabetes and breast cancer.
-  [0.80] metformin reduces senescence induced by obesity-re vs relationship between breast cancer and metformin: 
-         Both claims support the potential benefits of metformin in reducing breast cancer incidence and progression, although they focus on different mechanisms and aspects.
+  [1.00] CRISPR-Cas Systems in Targeted Drug Delivery and G vs The revolution of clustered regularly interspaced 
+         Both claims support the therapeutic potential of CRISPR technology, highlighting its applications in targeted drug delivery and gene therapy for treating genetic disorders and cancer.
+  [1.00] CRISPR technology in human diseases vs The revolution of clustered regularly interspaced 
+         Both claims support the potential and applications of CRISPR technology in treating various diseases.
+  [0.90] Progress, Applications and Prospects of CRISPR-Bas vs Therapeutic applications of CRISPR-Cas9 gene editi
+         Both claims support the therapeutic potential and applications of CRISPR/Cas9 gene editing technology.
+  [0.90] Progress, Applications and Prospects of CRISPR-Bas vs Delivery approaches for CRISPR/Cas9 therapeutics i
+         Both claims emphasize the potential and promise of CRISPR/Cas9 technology in addressing human genetic diseases.
+  [0.90] Scientific Advancements in Gene Therapies: Opportu vs The revolution of clustered regularly interspaced 
+         Claim A and Claim B both support the potential of CRISPR-based technologies in gene therapy.
+  [0.90] Progress, Applications and Prospects of CRISPR-Bas vs The revolution of clustered regularly interspaced 
+         Both claims support the therapeutic potential and advancements of CRISPR technology in treating genetic diseases and cancer.
+  [0.90] Progress, Applications and Prospects of CRISPR-Bas vs CRISPR-Cas Systems in Targeted Drug Delivery and G
+         Both claims A and B express support for CRISPR/Cas technology's potential in revolutionizing gene therapy and addressing unmet medical needs.
+  [0.90] Progress, Applications and Prospects of CRISPR-Bas vs CRISPR technology in human diseases
+         Both claims express a positive and supportive tone towards CRISPR/Cas9 technology and its applications in gene therapy.
+  [0.90] CRISPR-Cas Systems in Targeted Drug Delivery and G vs Therapeutic applications of CRISPR-Cas9 gene editi
+         Both claims support the therapeutic potential of CRISPR-Cas systems, with one citing its transformative approach and the other referencing its FDA approval.
+  [0.90] Delivery approaches for CRISPR/Cas9 therapeutics i vs The revolution of clustered regularly interspaced 
+         Both claims assert the therapeutic potential and advantages of CRISPR/Cas9 technology, with only minor differences in emphasis
+  [0.80] Progress, Applications and Prospects of CRISPR-Bas vs Scientific Advancements in Gene Therapies: Opportu
+         Claim A supports the significant progress and potential of CRISPR-based technologies, which is also acknowledged in Claim B as breakthroughs
 
-PARTIAL AGREEMENTS (36)
+PARTIAL AGREEMENTS (9)
 ----------------------------------------
-  [0.80] survival and recurrence with glp-1 receptor agonis vs weight loss patterns and clinical outcomes of glp1
-         Both claims support the benefits of GLP-1 receptor agonists in breast cancer patients, but with slightly different outcomes measured (mortality and recurrence-free survival vs. weight loss and all-cause survival).
-  [0.80] exploration of bmi and circulating metabolic facto vs relationship between breast cancer and metformin: 
-         Claim A suggests metformin may have negative effects in certain breast cancer subtypes, while Claim B implies it can help manage the relationship between diabetes and breast cancer, including reducing cancer incidence and death risk.
-  [0.80] metformin enhances response to chemotherapy combin vs metformin-mediated glycaemic regulation as a poten
-         Both claims support metformin's potential benefits in breast cancer treatment, but Claim A focuses on its synergistic effects with chemotherapy and immunotherapy, whereas Claim B highlights its preventive properties.
-  [0.80] metformin-mediated glycaemic regulation as a poten vs metformin and its derivatives in breast cancer: fr
-         Both claims support metformin's potential in breast cancer prevention, but Claim A emphasizes its anti-cancer molecular mechanisms, while Claim B focuses on glucose metabolism and tumor-intrinsic pathways.
-  [0.80] relationship between breast cancer and metformin:  vs metformin and its derivatives in breast cancer: fr
-         Both claims support the potential benefits of metformin in managing breast cancer, but Claim A focuses on its role in reducing cancer incidence and death risk, while Claim B highlights its ability to suppress breast cancer cell proliferation by targeting glucose metabolism.
-  [0.80] metformin drives hif-1alpha-mediated dual metaboli vs metformin enhances response to chemotherapy combin
-         Claim A focuses on metformin's enhancement of Gammadelta T cell therapy, while Claim B explores its effect when combined with chemotherapy and immunotherapy
-  [0.80] exploration of bmi and circulating metabolic facto vs metformin and its derivatives in breast cancer: fr
-         Claim A suggests metformin may have negative effects in certain breast cancer subtypes, while Claim B presents metformin as having potential benefits, indicating a partial agreement due to the conflicting results.
-  [0.80] metformin enhances response to chemotherapy combin vs metformin impairs breast cancer growth through the
-         Both claims support metformin's effectiveness in inhibiting breast cancer growth, but they focus on different mechanisms and outcomes.
-  [0.80] exploration of bmi and circulating metabolic facto vs metformin-mediated glycaemic regulation as a poten
-         Claim A suggests metformin may have negative effects in certain subgroups, while Claim B supports metformin's potential to prevent breast cancer by inducing anti-cancer mechanisms.
-  [0.80] metformin as an immunometabolic modulator in breas vs metformin-mediated glycaemic regulation as a poten
-         Both claims support metformin's anticancer potential, but Claim A emphasizes its immunometabolic modulator effects and innate immune responses, while Claim B focuses on its glycaemic regulation and anti-cancer molecular mechanisms.
-  [0.80] wbp2 attenuates metformin response in her2-positiv vs metformin-mediated glycaemic regulation as a poten
-         Claim A suggests that WBP2 attenuates metformin's effect on HER2-positive breast cancer cells, while Claim B supports the potential of metformin to prevent breast cancer, but does not directly address the impact of WBP2.
-  [0.80] metformin triggers apoptosis via endoplasmic retic vs metformin-mediated glycaemic regulation as a poten
-         Both claims agree that metformin has anti-cancer properties, but Claim A specifically focuses on its effect via endoplasmic reticulum stress in HER2-positive breast cancer cell lines, whereas Claim B mentions various molecular mechanisms and types of cancers.
-  [0.80] relationship between breast cancer and metformin:  vs metformin enhances alpelisib sensitivity in her2+ 
-         Claim A and Claim B both support the potential benefits of metformin in breast cancer treatment, but they address different aspects: reducing cancer incidence and death risk (A), enhancing sensitivity to alpelisib (B)
-  [0.80] metformin potentiates dsf/cu-loaded pluronic nanop vs mtorc1 inhibition by metformin synergizes with den
-         Both claims support the antitumor effects of metformin, but in different combinations with other treatments and mechanisms.
-  [0.80] exploration of bmi and circulating metabolic facto vs metformin enhances response to chemotherapy combin
-         Claim A suggests metformin may have negative effects in certain breast cancer subtypes, while Claim B indicates metformin can enhance response to chemotherapy combined with immunotherapy in triple negative breast cancer models, highlighting differing outcomes based on specific conditions.
-  [0.80] studying synergistic anticancer effects of repurpo vs metformin enhances response to chemotherapy combin
-         Claims A and B both support the use of metformin in treating triple-negative breast cancer, but Claim A focuses on its synergistic effects when combined with losartan or rosiglitazone, while Claim B highlights its enhanced effect when combined with chemotherapy and immunotherapy.
-  [0.80] metformin and its derivatives in breast cancer: fr vs metformin enhances alpelisib sensitivity in her2+ 
-         Claim A suggests metformin's anticancer effects are due to glucose metabolism targeting, while Claim B highlights its synergistic effect with alpelisib through oncogenic signaling inhibition.
-  [0.80] wbp2 attenuates metformin response in her2-positiv vs metformin enhances alpelisib sensitivity in her2+ 
-         Claim A and Claim B support each other in that metformin is effective against HER2+ breast cancer, but have a notable difference in how WBP2 affects this efficacy.
-  [0.80] relationship between breast cancer and metformin:  vs metformin impairs breast cancer growth through the
-         Both claims support the potential benefits of metformin in breast cancer treatment, but Claim B provides a more specific mechanism through which metformin exerts its effects.
-  [0.80] metformin and its derivatives in breast cancer: fr vs metformin impairs breast cancer growth through the
-         Claim A and Claim B agree that metformin has anticancer effects, but they emphasize different mechanisms of action.
-  [0.80] metformin triggers apoptosis via endoplasmic retic vs mtorc1 inhibition by metformin synergizes with den
-         Both claims agree that metformin triggers apoptosis in breast cancer cells, but differ in the specific mechanism and combination used (ER stress vs mTORC1 inhibition and curcumin)
-  [0.80] exploration of bmi and circulating metabolic facto vs wbp2 attenuates metformin response in her2-positiv
-         Claim A suggests metformin may have negative effects, while Claim B provides a specific mechanism of how WBP2 inhibits its effect in HER2-positive breast cancer cells.
-  [0.80] metformin enhances response to chemotherapy combin vs metformin and its derivatives in breast cancer: fr
-         Claim A and Claim B agree that metformin has potential benefits in breast cancer treatment, but they differ in their emphasis on the mechanisms and effects of metformin
-  [0.80] exploration of bmi and circulating metabolic facto vs metformin impairs breast cancer growth through the
-         Claim A suggests metformin may have negative effects in certain subtypes, while Claim B supports the potential benefits of metformin in impairing breast cancer growth through inhibition of Prmt6
-  [0.80] metformin enhances response to chemotherapy combin vs metformin as an immunometabolic modulator in breas
-         Claim A provides more specific and direct evidence that metformin enhances response to chemotherapy in a triple negative breast cancer model, while Claim B presents broader evidence of metformin's anticancer potential as an immunometabolic modulator.
-  [0.80] wbp2 attenuates metformin response in her2-positiv vs metformin impairs breast cancer growth through the
-         Claim A and Claim B both mention metformin's effect on breast cancer, but they describe different mechanisms and outcomes
-  [0.80] a novel combination for in vivo breast cancer trea vs metformin-mediated glycaemic regulation as a poten
-         Claim A supports a combination therapy including metformin, while Claim B focuses on metformin alone for breast cancer prevention
-  [0.80] metformin enhances response to chemotherapy combin vs metformin with neoadjuvant chemotherapy in localiz
-         Claim A and Claim B have a partial agreement because they report differing effects of metformin on chemotherapy response in different patient subgroups, but both agree that metformin may be beneficial for certain patients.
-  [0.80] metformin enhances response to chemotherapy combin vs metformin-loaded fusogenic liposome improves the t
-         Both claims support the idea that metformin improves treatment outcomes in breast cancer, but with different treatment regimens and mechanisms of action.
-  [0.80] relationship between breast cancer and metformin:  vs wbp2 attenuates metformin response in her2-positiv
-         Claim A suggests metformin has a beneficial role in managing diabetes-related breast cancer, while Claim B contradicts this by indicating WBP2 inhibits metformin's effect on HER2-positive breast cancer cells.
-  [0.80] impact of type 2 diabetes on malignancies of the f vs metformin and its derivatives in breast cancer: fr
-         Claim A and Claim B generally agree that metformin has potential in reducing cancer risk, but they differ in their scope (T2DM-related complications vs breast cancer specifically) and the level of evidence supporting its benefits.
-  [0.80] metformin drives hif-1alpha-mediated dual metaboli vs metformin-mediated glycaemic regulation as a poten
-         Claim A focuses on metformin's ability to enhance Gammadelta T cell therapy in TNBC, while Claim B emphasizes metformin's potential as a preventative measure for breast cancer through anti-cancer mechanisms.
-  [0.80] exploration of bmi and circulating metabolic facto vs metformin with neoadjuvant chemotherapy in localiz
-         Claim A and Claim B both indicate that metformin may not have a significant benefit in breast cancer patients, but they differ in specific subgroups and outcomes.
-  [0.80] metformin triggers apoptosis via endoplasmic retic vs metformin impairs breast cancer growth through the
-         Both claims support metformin's anti-breast cancer properties, but they propose different underlying mechanisms (ER stress vs inhibition of Prmt6)
-  [0.80] relationship between breast cancer and metformin:  vs metformin with neoadjuvant chemotherapy in localiz
-         Claim A supports the potential benefits of metformin in breast cancer treatment, while Claim B is neutral and does not confirm these benefits for all patients, but has a notable partial agreement on the trend that metformin may be beneficial for HER2-positive patients.
-  [0.70] exploration of bmi and circulating metabolic facto vs metformin reduces senescence induced by obesity-re
-         Claim A suggests metformin may have negative effects in some breast cancer subtypes, while Claim B supports the beneficial effects of metformin on reducing senescence markers and tumor progression in another subtype.
+  [0.80] CRISPR-based gene therapy for the induction of fet vs Revolutionary breakthrough: FDA approves CASGEVY, 
+         Claim A presents a potential solution for sickle cell disease using CRISPR/Cas9 gene editing, while Claim B reports the FDA approval of a specific CRISPR/Cas9 gene therapy, but both share a common goal of treating the disease.
+  [0.80] CRISPR-Cas Systems in Targeted Drug Delivery and G vs Delivery approaches for CRISPR/Cas9 therapeutics i
+         Claim A supports the transformative potential of CRISPR-Cas systems, while Claim B focuses on the challenges and limitations in translating the system to in vivo applications.
+  [0.80] Therapeutic applications of CRISPR-Cas9 gene editi vs Delivery approaches for CRISPR/Cas9 therapeutics i
+         Claim A and Claim B both support the therapeutic applications of CRISPR-Cas9, but they highlight different aspects: Claim A focuses on FDA approval as evidence, while Claim B emphasizes the system's potential for high-fidelity gene editing.
+  [0.80] CRISPR-Cas Systems in Targeted Drug Delivery and G vs Precision in Action: The Role of Clustered Regular
+         Both claims support the potential of CRISPR-Cas systems in gene therapy, but Claim A emphasizes its application in targeted drug delivery, which is not explicitly mentioned in Claim B.
+  [0.80] Complex HBB gene editing outcomes revealed by a fl vs CRISPR-based gene therapy for the induction of fet
+         Claim A highlights potential risks and complications of CRISPR-Cas9 gene editing, while Claim B presents a successful outcome with high efficacy, but does not address the issue of accessibility.
+  [0.80] CRISPR-Cas Systems in Targeted Drug Delivery and G vs Scientific Advancements in Gene Therapies: Opportu
+         Both claims A and C support the potential of CRISPR-based technologies in gene therapy, but claim B focuses on access issues rather than technological advancements.
+  [0.80] CRISPR technology in human diseases vs Scientific Advancements in Gene Therapies: Opportu
+         Claim A supports gene editing technology's potential in treating human diseases, while Claim B focuses on equitable access to gene therapies without taking a stance on the technology itself
+  [0.80] Five Years of Progress in CRISPR Clinical Trials ( vs Scientific Advancements in Gene Therapies: Opportu
+         Claim A focuses on CRISPR-based medicines receiving regulatory approvals, while Claim B discusses the need for equitable access to gene therapies, both supporting the progress of gene therapy but addressing different aspects.
+  [0.80] CRISPR technology in human diseases vs EXPLORING THE POTENTIAL OF GENE THERAPY FOR INHERI
+         Claims A and B generally support each other, but Claim A focuses on the therapeutic potential of gene editing technology in treating a wide range of human diseases, whereas Claim B highlights its potential specifically for inherited genetic disorders and emphasizes the need for improved safety and governance.
 
 SYNTHESIS
 ----------------------------------------
-**Structured Synthesis**
+**Synthesis Report**
 
-**1. Overall Consensus:**
+**Overall Consensus**
 
-The majority of claims agree that metformin has potential therapeutic effects against breast cancer, particularly in:
+The majority of claims agree that CRISPR-Cas technology has significant potential in treating various diseases, including genetic disorders and cancer. The consensus emphasizes its therapeutic applications, high-fidelity gene editing capabilities, and transformative approach to targeted drug delivery and gene therapy.
 
-* Reducing tumor proliferation through glucose metabolism targeting
-* Enhancing chemotherapy response or immunotherapy sensitivity
-* Inducing apoptosis via endoplasmic reticulum stress or mTORC1 inhibition
+**Key Disputes**
 
-**2. Key Disputes:**
+The most significant contradictions involve the following claims:
 
-Two main contradictions stand out:
+* Claim A (Progress, Applications and Prospects of CRISPR-Based Genome) vs. Claim B (Scientific Advancements in Gene Therapies: Opportunities for): While both support the potential of CRISPR-based technologies, Claim A focuses on its revolutionary impact on molecular biology, whereas Claim B highlights the need for equitable access to gene therapies.
+* Claim A (CRISPR-Cas Systems in Targeted Drug Delivery and Gene Therapy) vs. Claim B (Delivery approaches for CRISPR/Cas9 therapeutics in vivo): Although both support the potential of CRISPR-Cas systems, Claim A emphasizes its application in targeted drug delivery, which is not explicitly mentioned in Claim B.
+* Claim A (CRISPR technology in human diseases) vs. Claim B (EXPLORING THE POTENTIAL OF GENE THERAPY FOR INHERITED GENETIC DISORDERS): While both generally support the therapeutic potential of gene editing technology, they differ in their focus: Claim A emphasizes its potential in treating a wide range of human diseases, whereas Claim B highlights its specific potential for inherited genetic disorders.
 
-* **WBP2 and metformin efficacy in HER2-positive breast cancer cells**: Claim A (WBP2 attenuates metformin response) contradicts Claim B (metformin enhances alpelisib sensitivity), with the former suggesting WBP2 inhibits metformin's effect, while the latter implies metformin is effective when combined with alpelisib.
-* **Metformin's anti-cancer mechanisms**: Claims differ in their understanding of how metformin exerts its effects, with some emphasizing glucose metabolism targeting (Claim A) and others highlighting anti-apoptotic protein modulation (Claim B).
+**Evidence Quality Assessment**
 
-**3. Evidence Quality Assessment:**
+Higher-evidence studies (meta-analyses and RCTs) tend to agree with lower-evidence studies. For instance, the FDA approval of CRISPR therapy in late 2023 (Claim A: Therapeutic applications of CRISPR-Cas9 gene editing) is supported by several studies, including a meta-analysis on CRISPR-based medicines (Claim B: Five Years of Progress in CRISPR Clinical Trials).
 
-Higher-evidence studies tend to agree on metformin's potential therapeutic effects against breast cancer, but the quality and consistency of evidence vary:
+**Possible Reasons for Disagreement**
 
-* **Meta-analyses and RCTs**: These higher-evidence studies support metformin's efficacy in enhancing chemotherapy response or immunotherapy sensitivity (Claims 1-5).
-* **Lower-evidence studies**: Observational or preclinical studies provide mixed results, with some suggesting potential benefits while others report conflicting findings.
+* Methodological differences: Studies may have varying approaches to evaluating the effectiveness and safety of CRISPR-Cas technology.
+* Population differences: Claims may focus on different patient populations, such as those with inherited genetic disorders (Claim B: EXPLORING THE POTENTIAL OF GENE THERAPY FOR INHERITED GENETIC DISORDERS) or those with cancer (Claim A: Therapeutic applications of CRISPR-Cas9 gene editing).
+* Outcome measures: Claims may focus on different outcome measures, such as efficacy (Claim A: Progress, Applications and Prospects of CRISPR-Based Genome) vs. access to equitable care (Claim B: Scientific Advancements in Gene Therapies: Opportunities for).
 
-**4. Possible Reasons for Disagreement:**
+**Confidence Level**
 
-Methodological differences and population characteristics may contribute to disagreements:
+Based on the analysis, the overall confidence level is **medium-high** (7-8/10). The majority of claims agree on the therapeutic potential and applications of CRISPR-Cas technology. However, there are some key disputes regarding methodological differences, population differences, and outcome measures. Further research is needed to address these disparities and provide a more comprehensive understanding of the evidence.
 
-* **Study populations**: HER2-positive breast cancer cells (Claim A) vs. triple-negative breast cancer cells (Claims 1-5)
-* **Outcome measures**: Glucose metabolism targeting (Claim A) vs. apoptosis induction or chemotherapy response enhancement
-* **Treatment combinations**: Metformin alone (Claim B) vs. metformin combined with other treatments
+The evidence quality assessment suggests that higher-evidence studies tend to support lower-evidence studies, indicating a general consensus on the potential of CRISPR-Cas technology. However, the confidence level may be slightly reduced due to the presence of some methodological differences and population-specific claims.
 
-**5. Confidence Level:**
+**Recommendations**
 
-Overall confidence in the body of evidence is medium to high, due to:
-
-* Consistent findings across multiple studies supporting metformin's potential therapeutic effects against breast cancer.
-* Higher-evidence studies providing strong evidence for metformin's efficacy in enhancing chemotherapy response or immunotherapy sensitivity.
-
-However, the presence of contradictions and mixed results from lower-evidence studies means that further research is needed to fully understand metformin's mechanisms and optimal treatment combinations.
+* Further research is needed to address the methodological and population-related disputes.
+* Studies focusing on equitable access to gene therapies should be prioritized to ensure that CRISPR-Cas technology benefits a broader range of patients.
+* Meta-analyses and RCTs can help synthesize existing evidence and provide more robust conclusions about the effectiveness and safety of CRISPR-Cas technology.
 
 Overall confidence: MEDIUM
