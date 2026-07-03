@@ -172,18 +172,28 @@ The current application uses a focused, stage-based LLM workflow rather than a l
 
 This is the right place to mix models and agents selectively: keep ingestion deterministic, and reserve multi-model or multi-agent coordination for analysis, synthesis, and dashboard reasoning.
 
-Current Ollama defaults used across the app are `llama3.1:8b`, `gemma3:4b`, `gemma3:1b`, and `qwen3.5:9b`.
+### Ollama Model Configuration & Fallbacks
+- **Mixture of LLMs (MoLLM) Architecture**: The pipeline divides reasoning across specialized models optimized for specific cognitive tasks:
+  - **Query Planner & Router**: Defaults to `llama3.1:8b` (General instruct model to analyze user queries and establish execution paths).
+  - **Claim Extractor**: Defaults to `llama3.1:8b` (Parses unstructured texts into tabular claim assertions).
+  - **Contradiction Detector**: Defaults to `qwen3.5:9b` (Fine-grained logical reasoning to compare claim pairs for alignments or disputes).
+  - **Consensus Analyst**: Defaults to `koesn/llama3-openbiollm-8b:latest` (Domain-specific medical model to synthesize research alignment).
+  - **Synthesis Answer Generator**: Defaults to `llama3.1:8b` (Synthesizes facts with active source citations).
+  - **Protocol & ELN Agent**: Defaults to `llama3.1:8b` (Structured medical lab planning and notebook entry writing).
+- **Flexible Model Selection**:
+  - **Default Optimized Mixture**: Automatically assigns the curated default models above to each respective pipeline stage.
+  - **Custom Specialist Routing**: Allows the user to manually override and assign any installed model to any stage via sidebar dropdown menus.
+- **Robust Model Parsing**: Handlers are built to parse both the dictionary list format and the object list format returned by different local versions of the Ollama `list()` API.
+- **Priority-Based Fallback**: If a designated model (e.g. `koesn/llama3-openbiollm-8b:latest`) is not found running locally, the system automatically falls back to secondary priority options (such as `llama3.1:8b` or `qwen3.5:9b`), showing a warning log in the summary instead of crashing.
 
-## Query Planner
+## Query Planner & Live Status Callback
 
-The Streamlit app now includes a planner tab that turns a user question into a full execution workflow before answering.
+The Streamlit app includes a planner tab that turns a user question into a full execution workflow before answering.
 
-- General research questions route to standard RAG.
-- Conflict or agreement questions route to graph-aware RAG plus contradiction review.
-- Evidence-quality questions route to ranked evidence retrieval.
-- Claim-focused questions route to the claims layer.
-- The planner now shows the full workflow chain: Query, Planner, Retriever, collectors, Filter, Converter/Standardizer, Embedding, Vector DB, Executor, Evidence Ranker, Claim Extractor, Contradiction Agent, Consensus Agent, Synthesizer, and Verifier.
-- The planner executes the matching retriever and surfaces the fetched papers, matched claims, and graph relations before generating the answer.
+- **Routed Queries**: General research questions route to standard RAG, while conflict/agreement questions run graph-aware RAG plus contradiction reviews.
+- **Live Processing Progress**: To keep the interface responsive, a `status_callback` listener updates the dashboard with real-time feedback notices above the loader spinner as each stage executes (e.g. *“Ingesting fresh research papers...”*, *“Retrieving context...”*, *“Generating synthesis (Verification Loop)...”*, *“Designing lab protocol...”*).
+- **RAG Comparison Logging**: The RAG vs. Graph RAG Comparison tab also reports stage-by-stage status live (e.g. standard vs. graph retrieval and generation phases).
+- **LLM Routing & Performance Summary**: An expandable table displays latency statistics, requested vs. resolved models, and warning notes for every stage.
 
 Open the planner tab in `app.py`, enter a query, review the generated steps, and then run the planned query to see the routed answer.
 
