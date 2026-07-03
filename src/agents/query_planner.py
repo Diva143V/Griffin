@@ -281,7 +281,8 @@ def execute_query_plan(
     api_key: str = "",
     forced_agents: Optional[List[str]] = None,
     force_fresh: bool = False,
-    model_routing: Optional[Dict[str, str]] = None
+    model_routing: Optional[Dict[str, str]] = None,
+    status_callback: Optional[Callable[[str], None]] = None
 ) -> Dict[str, Any]:
     # Resolve routing config
     default_routing = {
@@ -304,12 +305,12 @@ def execute_query_plan(
     fallback_logs = []
     
     fallbacks_by_key = {
-        "planner": ["gemma3:4b", "gemma3:1b", "llama3.1:8b", "qwen3.5:9b", "llama3.1:latest"],
-        "claim_extractor": ["gemma3:4b", "gemma3:1b", "llama3.1:8b", "qwen3.5:9b", "llama3.1:latest"],
+        "planner": ["llama3.1:8b", "gemma3:4b", "gemma3:1b", "qwen3.5:9b", "llama3.1:latest"],
+        "claim_extractor": ["llama3.1:8b", "gemma3:4b", "gemma3:1b", "qwen3.5:9b", "llama3.1:latest"],
         "contradiction_detector": ["qwen3.5:9b", "llama3.1:8b", "gemma3:4b", "gemma3:1b", "llama3.1:latest"],
         "consensus_analyst": ["koesn/llama3-openbiollm-8b:latest", "llama3.1:8b", "qwen3.5:9b", "gemma3:4b", "gemma3:1b"],
-        "synthesis": ["gemma3:4b", "gemma3:1b", "llama3.1:8b", "qwen3.5:9b", "llama3.1:latest"],
-        "experiment_planner": ["gemma3:4b", "gemma3:1b", "llama3.1:8b", "qwen3.5:9b", "llama3.1:latest"]
+        "synthesis": ["llama3.1:8b", "gemma3:4b", "gemma3:1b", "qwen3.5:9b", "llama3.1:latest"],
+        "experiment_planner": ["llama3.1:8b", "gemma3:4b", "gemma3:1b", "qwen3.5:9b", "llama3.1:latest"]
     }
 
     for key, req_model in routing.items():
@@ -345,11 +346,15 @@ def execute_query_plan(
         ranked_df["embedding"] = ranked_df["embedding"].apply(parse_emb)
 
     # 0. Clean the query first to remove conversational filler/instructions
+    if status_callback:
+        status_callback("Cleaning research query keywords...")
     planner_start = time.time()
     search_query = clean_search_query(plan.query, resolved_routing["planner"])
     routing_stats["planner"]["duration_sec"] += time.time() - planner_start
 
     # 1. Check database for existing relevant papers using the clean scientific search query
+    if status_callback:
+        status_callback("Checking database cache for relevant papers...")
     if force_fresh:
         is_present = False
         check_msg = "Force fresh retrieval requested. Ignoring database cache."
@@ -362,6 +367,8 @@ def execute_query_plan(
         notes.extend([f"⚠️ {log}" for log in fallback_logs])
     
     if not is_present:
+        if status_callback:
+            status_callback("Ingesting fresh research papers from external APIs (PMC, OpenAlex, SemanticScholar)... This may take up to a minute...")
         try:
             ingest_logs = run_pipeline_ingestion(search_query, email=email, api_key=api_key, model_name=resolved_routing["planner"], top_k=plan.top_k)
             notes.extend(ingest_logs)
@@ -404,6 +411,8 @@ def execute_query_plan(
             
             # If still None or empty, try recovery from Chroma DB
             if ranked_df is None or ranked_df.empty:
+                if status_callback:
+                    status_callback("Dataset files missing or empty on disk. Restoring papers from Chroma DB cache...")
                 notes.append("Files missing or empty on disk. Restoring papers from Chroma DB cache...")
                 try:
                     import chromadb
@@ -443,6 +452,8 @@ def execute_query_plan(
                     notes.append(f"Failed to restore papers from Chroma DB: {ex}")
 
     # 1b. Call the Executor LLM Router or use the user's manual selection
+    if status_callback:
+        status_callback("Routing user request to specialist agents using LLM...")
     executor_start = time.time()
     if forced_agents is not None:
         executed_agents = forced_agents
@@ -480,6 +491,8 @@ def execute_query_plan(
         return result
 
     # 2. Retrieve Context (Standard vs. Graph RAG)
+    if status_callback:
+        status_callback("Retrieving context and semantic evidence...")
     if plan.route == "graph_rag + contradiction_review":
         context, sources, relations = retrieve_graph(plan.query, encoder_model, ranked_df, contradictions, similarity_threshold, plan.top_k)
         result["context"] = context
@@ -517,6 +530,8 @@ def execute_query_plan(
     verification_trace = []
     
     if "synthesis" in executed_agents or not executed_agents:
+        if status_callback:
+            status_callback("Generating scientific synthesis answer and auditing citations (Verification Loop)... This might take 30-60 seconds...")
         system_content = "You are a senior scientific research analyst. Answer the user's question using the scientific evidence provided. Provide a highly detailed, comprehensive, and exhaustive scientific synthesis. Elaborate on the mechanisms of action, clinical evidence, study designs, sample sizes, and outcomes."
         user_content = f"USER QUESTION: {plan.query}\n\nCONTEXT: {result['context']}\n\nPlease cite specific sources using identifiers like [Source Paper X] or [Graph Connection Y]. Address any contradictions in detail."
 
@@ -561,6 +576,8 @@ def execute_query_plan(
 
     # 5. Run Consensus Agent - Dynamic Execution
     if "consensus_analyst" in executed_agents:
+        if status_callback:
+            status_callback("Analyzing scientific consensus and extracting agreements/contradictions...")
         consensus_start = time.time()
         consensus_res = analyze_consensus(plan.query, result.get("sources", []), result.get("relations", []), model_name=resolved_routing["consensus_analyst"])
         routing_stats["consensus_analyst"]["duration_sec"] = round(time.time() - consensus_start, 2)
@@ -574,6 +591,8 @@ def execute_query_plan(
 
     # 6. Run Experiment Agent - Dynamic Execution
     if "experiment_planner" in executed_agents:
+        if status_callback:
+            status_callback("Designing step-by-step laboratory experiment protocol...")
         exp_start = time.time()
         experiment_res = design_protocol(plan.query, synthesis_answer or plan.query, model_name=resolved_routing["experiment_planner"])
         result["experiment_protocol"] = experiment_res["protocol_draft"]
@@ -586,6 +605,8 @@ def execute_query_plan(
 
         # 7. Run ELN Agent - Dynamic Execution
         if "eln_assistant" in executed_agents:
+            if status_callback:
+                status_callback("Formatting and logging entry to the Electronic Lab Notebook (ELN)...")
             eln_res = format_eln_entry("Dr. Scientist", "Metformin Oncology Project", experiment_res["protocol_draft"], "Pre-incubated cells for 24h before treatment.", model_name=resolved_routing["experiment_planner"])
             result["eln_entry"] = eln_res["eln_entry"]
             try:
@@ -605,4 +626,3 @@ def execute_query_plan(
             pass
 
     return result
-

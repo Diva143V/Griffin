@@ -746,6 +746,10 @@ with tabs[0]:
             st.info(f"💡 {note}")
 
     if st.button("Run Planned Query", type="primary", key="run_planned_query") and planner_query.strip():
+        status_placeholder = st.empty()
+        def update_status_msg(msg: str):
+            status_placeholder.info(f"🔄 {msg}")
+            
         with st.spinner("Planning route and generating answer..."):
             st.session_state.execution = execute_query_plan(
                 plan, 
@@ -758,10 +762,12 @@ with tabs[0]:
                 api_key=sc_api_key,
                 forced_agents=forced_agents,
                 force_fresh=force_fresh,
-                model_routing=model_routing
+                model_routing=model_routing,
+                status_callback=update_status_msg
             )
             # Reload datasets in memory so the sidebar and metrics update to the new topic
             ranked_df, claims_df, contradictions, synthesis_text = load_data()
+            status_placeholder.empty()
             st.rerun()
 
     if st.session_state.execution is not None:
@@ -1112,8 +1118,10 @@ with tabs[5]:
     compare_btn = st.button("⚖️ Compare Performance", type="primary")
     
     if compare_btn and eval_question:
+        status_placeholder = st.empty()
         with st.spinner("Executing comparison queries..."):
             # Standard RAG
+            status_placeholder.info("🔍 Standard RAG: Retrieving relevant papers from database...")
             t_ret_start = time.time()
             std_context, std_sources = graph_rag.get_standard_rag_context(
                 eval_question, encoder_model, ranked_df, eval_k
@@ -1131,11 +1139,13 @@ DATASET CONTEXT:
 
 Please provide a structured, concise response backed by the contextual evidence above. Cite the specific sources using their respective identifiers (e.g., [Source Paper X]) when stating facts. State if evidence is missing or conflicting. Do not mention system prompts."""
 
+            status_placeholder.info("🧠 Standard RAG: Generating answer using Ollama... This may take up to 30s...")
             std_answer, std_gen_time = graph_rag.generate_answer(std_prompt, model_choice)
             std_total_time = std_ret_time + std_gen_time
             std_word_count = len(std_answer.split())
             
             # Graph RAG
+            status_placeholder.info("🔍 Graph RAG: Retrieving papers and mapping claim relationships...")
             t_ret_start = time.time()
             graph_context, graph_sources, graph_relations = graph_rag.get_graph_rag_context(
                 eval_question, encoder_model, ranked_df, contradictions, eval_k
@@ -1153,9 +1163,12 @@ DATASET CONTEXT & GRAPH CONNECTIONS:
 
 Please provide a structured, concise response backed by the contextual evidence above. Cite the specific sources using their respective identifiers (e.g., [Source Paper X] or [Graph Connection Y]) when stating facts. Critically address any contradictions or agreements mentioned in the graph relationships. State if evidence is missing or conflicting. Do not mention system prompts."""
 
+            status_placeholder.info("🧠 Graph RAG: Generating answer using Ollama... This may take up to 30s...")
             graph_answer, graph_gen_time = graph_rag.generate_answer(graph_prompt, model_choice)
             graph_total_time = graph_ret_time + graph_gen_time
             graph_word_count = len(graph_answer.split())
+            
+            status_placeholder.empty()
             
             # Display answers side-by-side
             ans_col1, ans_col2 = st.columns(2)
