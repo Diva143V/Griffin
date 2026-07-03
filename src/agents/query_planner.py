@@ -33,7 +33,20 @@ def get_valid_model(requested_model: str, fallback_priority: List[str] = None) -
     notes = []
     try:
         model_list = ollama.list()
-        installed_models = [m.model for m in model_list.models]
+        installed_models = []
+        if isinstance(model_list, dict) and "models" in model_list:
+            for m in model_list["models"]:
+                if isinstance(m, dict):
+                    if "model" in m:
+                        installed_models.append(m["model"])
+                    elif "name" in m:
+                        installed_models.append(m["name"])
+                elif hasattr(m, "model"):
+                    installed_models.append(m.model)
+                elif hasattr(m, "name"):
+                    installed_models.append(m.name)
+        elif hasattr(model_list, "models"):
+            installed_models = [m.model for m in model_list.models]
     except Exception as e:
         return requested_model, [f"Warning: Failed to contact Ollama for model check: {e}"]
 
@@ -99,15 +112,22 @@ def check_and_trigger_retrieval(query: str, encoder_model: Any, top_k: int) -> T
     return False, f"Closest paper is too distant (distance: {closest_distance:.3f}). Triggering retrieval."
 
 
-def clean_search_query(raw_query: str, model_name: str = "gemma3:4b") -> str:
+def clean_search_query(raw_query: str, model_name: str = "llama3.1:8b") -> str:
     """Extract clean keyword search query from conversational prompts for PubMed/PMC/OpenAlex APIs."""
     cleaner_model = model_name
     try:
         model_list = ollama.list()
-        installed_names = [m.model for m in model_list.models]
+        installed_names = []
+        if isinstance(model_list, dict) and "models" in model_list:
+            for m in model_list["models"]:
+                if isinstance(m, dict) and "model" in m:
+                    installed_names.append(m["model"])
+        elif hasattr(model_list, "models"):
+            installed_names = [m.model for m in model_list.models]
+            
         # If the selected model is a specialized medical model, route query cleaning to a general instruct model
         if any(med in cleaner_model.lower() for med in ["openbiollm", "biomistral", "meditron"]):
-            for candidate in ["gemma3:4b", "gemma3:1b", "llama3.1:8b", "qwen3.5:9b", "llama3.1:latest"]:
+            for candidate in ["llama3.1:8b", "gemma3:4b", "gemma3:1b", "qwen3.5:9b", "llama3.1:latest"]:
                 if candidate in installed_names:
                     cleaner_model = candidate
                     break
@@ -126,6 +146,7 @@ Clean Keywords: metformin breast cancer survival
 Example 3:
 User request: {raw_query}
 Clean Keywords:"""
+
     try:
         response = ollama.chat(
             model=cleaner_model,
@@ -135,42 +156,6 @@ Clean Keywords:"""
             ]
         )
         cleaned = response["message"]["content"].strip()
-        # Post-process: filter out conversational filler lines
-        lines = [line.strip() for line in cleaned.split("\n") if line.strip()]
-        
-        filler_indicators = [
-            "here are", "here is", "i have", "you have", "successfully", "conversational", 
-            "keywords are", "search query", "note:", "filler", "extracted", "request", "please note"
-        ]
-        valid_lines = []
-        for line in lines:
-            line_lower = line.lower()
-            if len(line) > 50 and any(ind in line_lower for ind in filler_indicators):
-                continue
-            valid_lines.append(line)
-
-        if valid_lines:
-            cleaned = valid_lines[0]
-        elif lines:
-            cleaned = lines[0]
-            
-        # Strip common conversational prefix indicators (e.g. "The clean keywords are: ...")
-        if ":" in cleaned:
-            parts = cleaned.split(":", 1)
-            prefix = parts[0].lower()
-            indicators = ["clean", "keyword", "generate", "request", "user", "search", "query", "here", "are", "output"]
-            if any(ind in prefix for ind in indicators):
-                cleaned = parts[1].strip()
-
-        # Remove any line/part starting with "Note:" or parenthetical note
-        import re
-        if "note:" in cleaned.lower():
-            cleaned = re.split(r'\bnote:', cleaned, flags=re.IGNORECASE)[0].strip()
-        if "(" in cleaned and "note" in cleaned.lower():
-            cleaned = re.sub(r'\(.*?note.*?\)', '', cleaned, flags=re.IGNORECASE).strip()
-            
-        cleaned = cleaned.strip('"').strip("'").strip(".").strip()
-        
         # Check if the model refused to process or returned a conversational meta-sentence
         refusal_words = ["sorry", "unable", "cannot", "can't", "don't know", "request", "please", "dataset", "instruction"]
         if any(ref in cleaned.lower() for ref in refusal_words) or len(cleaned.split()) > 10:
@@ -182,7 +167,7 @@ Clean Keywords:"""
         return raw_query
 
 
-def run_pipeline_ingestion(query: str, email: str = "test@example.com", api_key: str = "", model_name: str = "gemma3:4b", top_k: int = 20) -> List[str]:
+def run_pipeline_ingestion(query: str, email: str = "test@example.com", api_key: str = "", model_name: str = "llama3.1:8b", top_k: int = 20) -> List[str]:
     """Run build_dataset, generate_embeddings, and evidence_ranker to ingest data with error boundaries."""
     logs = []
     
@@ -300,12 +285,12 @@ def execute_query_plan(
 ) -> Dict[str, Any]:
     # Resolve routing config
     default_routing = {
-        "planner": "gemma3:4b",
-        "claim_extractor": "gemma3:4b",
+        "planner": "llama3.1:8b",
+        "claim_extractor": "llama3.1:8b",
         "contradiction_detector": "qwen3.5:9b",
         "consensus_analyst": "koesn/llama3-openbiollm-8b:latest",
-        "synthesis": "gemma3:4b",
-        "experiment_planner": "gemma3:4b"
+        "synthesis": "llama3.1:8b",
+        "experiment_planner": "llama3.1:8b"
     }
     
     routing = dict(default_routing)

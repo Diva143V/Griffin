@@ -14,7 +14,21 @@ from src.agents.query_planner import build_query_plan, execute_query_plan, plan_
 def get_ollama_models():
     try:
         model_list = ollama.list()
-        names = [m.model for m in model_list.models]
+        names = []
+        if isinstance(model_list, dict) and "models" in model_list:
+            for m in model_list["models"]:
+                if isinstance(m, dict):
+                    if "model" in m:
+                        names.append(m["model"])
+                    elif "name" in m:
+                        names.append(m["name"])
+                elif hasattr(m, "model"):
+                    names.append(m.model)
+                elif hasattr(m, "name"):
+                    names.append(m.name)
+        elif hasattr(model_list, "models"):
+            names = [m.model for m in model_list.models]
+            
         target = "koesn/llama3-openbiollm-8b:latest"
         if target not in names:
             names.append(target)
