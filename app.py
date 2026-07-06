@@ -10,7 +10,7 @@ from sentence_transformers import SentenceTransformer
 from src.core import graph_rag
 from src.agents.query_planner import build_query_plan, execute_query_plan, plan_to_dict
 
-def run_with_stop_button(func, *args, **kwargs):
+def run_with_stop_button(func, *args, in_sidebar=False, **kwargs):
     import threading
     import time
     
@@ -29,7 +29,7 @@ def run_with_stop_button(func, *args, **kwargs):
     add_script_run_ctx(thread)
     thread.start()
     
-    stop_placeholder = st.empty()
+    stop_placeholder = st.sidebar.empty() if in_sidebar else st.empty()
     if stop_placeholder.button("⏹️ Stop / Cancel", key=f"stop_btn_{id(func)}"):
         st.rerun()
         
@@ -98,6 +98,34 @@ Please provide a structured, concise response backed by the contextual evidence 
     return (
         std_answer, std_sources, std_total_time, std_ret_time, std_word_count,
         graph_answer, graph_sources, graph_relations, graph_total_time, graph_ret_time, graph_word_count
+    )
+
+def run_contradiction_pipeline(chosen_extractor, chosen_detector, status_placeholder):
+    from src.core.claim_extractor import extract_claims
+    from src.core.contradiction_detector import run_detector
+    
+    status_placeholder.info("🔄 Stage 1: Extracting claims from papers using Ollama...")
+    extract_claims(
+        input_path="dataset/clean_papers.csv",
+        output_path="dataset/claims.csv",
+        model=chosen_extractor,
+        limit=50,
+        resume=False
+    )
+    
+    status_placeholder.info("🔄 Stage 2: Embedding claims and analyzing semantic contradictions & agreements...")
+    run_detector(
+        input_path="dataset/claims.csv",
+        output_text="dataset/contradictions.txt",
+        output_csv="dataset/contradictions.csv",
+        output_json="dataset/contradictions.json",
+        output_report="dataset/contradiction_report.md",
+        model=chosen_detector,
+        embedding_model="all-MiniLM-L6-v2",
+        evidence_file="dataset/ranked_papers.csv",
+        max_pairs=20,
+        similarity_threshold=0.45,
+        skip_embeddings=False
     )
 
 @st.cache_resource(ttl=60)
@@ -1148,7 +1176,8 @@ with tabs[1]:
                 try:
                     from src.agents.consensus_agent import analyze_consensus
                     # Run the consensus agent
-                    consensus_res = analyze_consensus(
+                    consensus_res = run_with_stop_button(
+                        analyze_consensus,
                         query=planner_query,
                         sources=temp_sources,
                         relations=temp_relations,
@@ -1194,37 +1223,15 @@ with tabs[2]:
         if st.button("⚡ Run Contradiction & Agreements Agent", type="primary", key="run_contradiction_agent"):
             with st.spinner("Executing pipeline..."):
                 try:
-                    # Import agents inline to avoid circular dependencies
-                    from src.core.claim_extractor import extract_claims
-                    from src.core.contradiction_detector import run_detector
-                    
                     status_placeholder = st.empty()
-                    
-                    status_placeholder.info("🔄 Stage 1: Extracting claims from papers using Ollama...")
                     chosen_extractor = model_routing.get("claim_extractor", model_choice)
                     chosen_detector = model_routing.get("contradiction_detector", model_choice)
                     
-                    extract_claims(
-                        input_path="dataset/clean_papers.csv",
-                        output_path="dataset/claims.csv",
-                        model=chosen_extractor,
-                        limit=50,
-                        resume=False
-                    )
-                    
-                    status_placeholder.info("🔄 Stage 2: Embedding claims and analyzing semantic contradictions & agreements...")
-                    run_detector(
-                        input_path="dataset/claims.csv",
-                        output_text="dataset/contradictions.txt",
-                        output_csv="dataset/contradictions.csv",
-                        output_json="dataset/contradictions.json",
-                        output_report="dataset/contradiction_report.md",
-                        model=chosen_detector,
-                        embedding_model="all-MiniLM-L6-v2",
-                        evidence_file="dataset/ranked_papers.csv",
-                        max_pairs=20,
-                        similarity_threshold=0.45,
-                        skip_embeddings=False
+                    run_with_stop_button(
+                        run_contradiction_pipeline,
+                        chosen_extractor,
+                        chosen_detector,
+                        status_placeholder
                     )
                     
                     status_placeholder.success("🎉 Contradiction detection completed successfully! Reloading dashboard...")
@@ -1563,6 +1570,7 @@ Please provide a structured, concise response. When answering using the dataset 
             
         response = run_with_stop_button(
             run_chat_query,
+            in_sidebar=True,
             model=rag_model_choice,
             messages=[{"role": "user", "content": prompt}]
         )
