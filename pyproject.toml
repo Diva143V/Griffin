@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "metformin-breast-cancer-pipeline"
+name = "Griffin"
 version = "0.1.0"
 description = "A research dataset pipeline and multi-agent RAG dashboard."
 authors = ["Your Name <you@example.com>"]
