@@ -1,13 +1,11 @@
-"""End-to-end dataset builder for the paper collection pipeline.
+"""End-to-end dataset builder for the paper and biological annotation collection pipeline.
 
 Pipeline:
-  PubMed fetcher
-  PMC fetcher
-  Semantic Scholar fetcher
+  Active Ingestion Collectors (PubMed, PMC, Semantic Scholar, OpenAlex, ClinicalTrials, bioRxiv, ChEMBL, UniProt, PubChem, dbSNP)
       ↓
   Merge results
       ↓
-  Remove duplicates (prefer PubMed > PMC > SemanticScholar)
+  Remove duplicates according to collector priority
       ↓
   Save final dataset
 
@@ -21,6 +19,7 @@ import subprocess
 import sys
 import pandas as pd
 
+# pyrefly: ignore [missing-import]
 from src.collectors.collector_registry import get_collector_names, get_selected_collectors, source_paths
 
 
@@ -31,9 +30,31 @@ def ensure_dataset_dir() -> None:
 def run_collectors(query: str, args) -> None:
     ensure_dataset_dir()
 
+    import json
+    limits = {}
+    if getattr(args, "collector_limits", None):
+        try:
+            limits = json.loads(args.collector_limits)
+        except Exception:
+            pass
+
     selected = get_selected_collectors(args.sources)
     for spec in selected:
         print(f"Running {spec.name} collector...")
+        custom_limit = limits.get(spec.name, args.max_results)
+        
+        # Override values dynamically
+        if spec.name == "PubMed":
+            args.pubmed_batch_size = custom_limit
+        elif spec.name == "PMC":
+            args.pmc_page_size = custom_limit
+        elif spec.name == "SemanticScholar":
+            args.ss_limit = custom_limit
+        elif spec.name == "OpenAlex":
+            args.openalex_per_page = custom_limit
+        else:
+            setattr(args, f"{spec.name.lower()}_limit", custom_limit)
+
         df = spec.runner(query, args)
         df.to_csv(spec.output_path, index=False)
         print(f"Saved {spec.output_path} with {len(df)} records")
@@ -72,7 +93,18 @@ def merge_and_dedup(output: str, max_results: int | None = None) -> pd.DataFrame
     else:
         all_papers["title_norm"] = all_papers.index.astype(str)
 
-    priority = {"PubMed": 0, "PMC": 1, "SemanticScholar": 2}
+    priority = {
+        "PubMed": 0,
+        "PMC": 1,
+        "SemanticScholar": 2,
+        "OpenAlex": 3,
+        "ClinicalTrials": 4,
+        "bioRxiv": 5,
+        "ChEMBL": 6,
+        "UniProt": 7,
+        "PubChem": 8,
+        "dbSNP": 9
+    }
     all_papers["source_priority"] = all_papers.get("source", "").map(priority).fillna(99)
     all_papers = all_papers.sort_values(["source_priority"], ascending=True)
 
@@ -125,6 +157,7 @@ def main() -> None:
     parser.add_argument("--openalex-rate-limit", type=float, default=1.0)
 
     parser.add_argument("--max-results", type=int, default=100)
+    parser.add_argument("--collector-limits", default="{}", help="JSON string mapping collector names to limits")
     parser.add_argument("--output", default="dataset/final_papers.csv")
     parser.add_argument("--run-filter", action="store_true", help="Run clean_dataset.py after saving final_papers.csv")
 

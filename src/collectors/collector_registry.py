@@ -14,6 +14,12 @@ from .collect_pmc import collect as collect_pmc
 from .collect_pubmed import collect as collect_pubmed
 from .collect_semanticscholar import collect as collect_semanticscholar
 from .collect_openalex import collect as collect_openalex
+from .collect_clinicaltrials import collect as collect_clinicaltrials
+from .collect_biorxiv import collect as collect_biorxiv
+from .collect_chembl import collect as collect_chembl
+from .collect_uniprot import collect as collect_uniprot
+from .collect_pubchem import collect as collect_pubchem
+from .collect_dbsnp import collect as collect_dbsnp
 
 
 @dataclass(frozen=True)
@@ -74,6 +80,74 @@ DEFAULT_COLLECTORS: Dict[str, CollectorSpec] = {
             max_pages=getattr(args, "openalex_max_pages", 2),
             rate_limit_sec=getattr(args, "openalex_rate_limit", 1.0),
             email=getattr(args, "email", None),
+        ),
+    ),
+    "ClinicalTrials": CollectorSpec(
+        name="ClinicalTrials",
+        output_path="dataset/clinicaltrials.csv",
+        priority=4,
+        description="ClinicalTrials.gov collector",
+        runner=lambda query, args: collect_clinicaltrials(
+            query,
+            page_size=getattr(args, "clinicaltrials_limit", 50),
+            max_pages=1,
+            rate_limit_sec=getattr(args, "clinicaltrials_rate_limit", 1.0),
+        ),
+    ),
+    "bioRxiv": CollectorSpec(
+        name="bioRxiv",
+        output_path="dataset/biorxiv.csv",
+        priority=5,
+        description="bioRxiv preprint collector",
+        runner=lambda query, args: collect_biorxiv(
+            query,
+            page_size=getattr(args, "biorxiv_limit", 100),
+            max_pages=1,
+        ),
+    ),
+    "ChEMBL": CollectorSpec(
+        name="ChEMBL",
+        output_path="dataset/chembl.csv",
+        priority=6,
+        description="ChEMBL bioactive molecule collector",
+        runner=lambda query, args: collect_chembl(
+            query,
+            page_size=getattr(args, "chembl_limit", 10),
+            max_pages=1,
+        ),
+    ),
+    "UniProt": CollectorSpec(
+        name="UniProt",
+        output_path="dataset/uniprot.csv",
+        priority=7,
+        description="UniProt protein collector",
+        runner=lambda query, args: collect_uniprot(
+            query,
+            page_size=getattr(args, "uniprot_limit", 5),
+            max_pages=1,
+        ),
+    ),
+    "PubChem": CollectorSpec(
+        name="PubChem",
+        output_path="dataset/pubchem.csv",
+        priority=8,
+        description="PubChem chemical properties collector",
+        runner=lambda query, args: collect_pubchem(
+            query,
+            page_size=getattr(args, "pubchem_limit", 5),
+            max_pages=1,
+        ),
+    ),
+    "dbSNP": CollectorSpec(
+        name="dbSNP",
+        output_path="dataset/dbsnp.csv",
+        priority=9,
+        description="NCBI dbSNP genetic variant collector",
+        runner=lambda query, args: collect_dbsnp(
+            query,
+            page_size=getattr(args, "dbsnp_limit", 5),
+            max_pages=1,
+            email=getattr(args, "email", ""),
         ),
     ),
 }

@@ -1,29 +1,36 @@
-# Metformin and Breast Cancer Paper Pipeline
+# Griffin Bio – Scientific Evidence Synthesis & Contradiction Workbench
 
-This project builds a small research dataset around the query **metformin breast cancer**.
+This project builds a professional research database and RAG pipeline around biomedical queries.
 
-It collects papers from modular source collectors, merges and deduplicates them, filters to the topic of interest, generates embeddings, and supports semantic retrieval and claim extraction.
+It collects scientific data from 10 modular source collectors, merges and deduplicates them, filters by keywords, generates embeddings, and supports semantic graph retrieval, claim extraction, and contradiction detection.
 
 ## Pipeline
 
 ```mermaid
 flowchart TD
-    A[PubMed collector] --> D[Merge and deduplicate]
-    B[Europe PMC collector] --> D
-    C[Semantic Scholar collector] --> D
-    D --> E[Save final dataset]
-    E --> F[Clean topic-specific subset]
-    F --> G[Generate embeddings]
-    G --> H[Semantic retrieval]
-    F --> I[Claim extraction]
-    F --> J[Evidence ranking]
-    I --> K[Contradiction detector]
-    J --> K
-    K --> L[Final synthesis]
-    L --> M[Streamlit App Dashboard]
-    K --> M
-    J --> M
-    I --> M
+    A[PubMed collector] --> K[Merge and deduplicate]
+    B[Europe PMC collector] --> K
+    C[Semantic Scholar collector] --> K
+    D[OpenAlex collector] --> K
+    E[ClinicalTrials collector] --> K
+    F[bioRxiv collector] --> K
+    G[ChEMBL collector] --> K
+    H[UniProt collector] --> K
+    I[PubChem collector] --> K
+    J[dbSNP collector] --> K
+    K --> L[Save final dataset]
+    L --> M[Clean topic-specific subset]
+    M --> N[Generate embeddings]
+    N --> O[Semantic retrieval]
+    M --> P[Claim extraction]
+    M --> Q[Evidence ranking]
+    P --> R[Contradiction detector]
+    Q --> R
+    R --> S[Final synthesis]
+    S --> T[Streamlit App Dashboard]
+    R --> T
+    Q --> T
+    P --> T
 ```
 
 ## Main Scripts
@@ -34,13 +41,22 @@ flowchart TD
 - `claim_extractor_agent.py` - agent facade for claim extraction.
 - `evidence_ranker_agent.py` - agent facade for evidence scoring.
 - `contradiction_agent.py` - agent facade for contradiction analysis.
-- `synthesizer_agent.py` - agent facade for synthesis generation.
-- `verifier_agent.py` - lightweight consistency checks for routed answers.
+- `consensus_agent.py` - consensus analyst agent with multidimensional confidence logic.
+- `eln_agent.py` - electronic lab notebook entry generator agent.
+- `experiment_agent.py` - dynamic lab protocol and control planner agent.
+- `verifier_agent.py` - citation verification loop and auditor agent.
 - `build_dataset.py` - runs the full collection and merge pipeline and can target a subset of collectors with `--sources`.
 - `collect_pubmed.py` - fetches PubMed papers with Entrez.
 - `collect_pmc.py` - fetches Europe PMC papers.
 - `collect_semanticscholar.py` - fetches Semantic Scholar papers.
-- `clean_dataset.py` - filters to metformin + breast cancer papers.
+- `collect_openalex.py` - fetches OpenAlex works.
+- `collect_clinicaltrials.py` - fetches ClinicalTrials.gov trials.
+- `collect_biorxiv.py` - fetches bioRxiv preprints.
+- `collect_chembl.py` - fetches ChEMBL compounds.
+- `collect_uniprot.py` - fetches UniProt protein mappings.
+- `collect_pubchem.py` - fetches PubChem compound properties.
+- `collect_dbsnp.py` - fetches dbSNP genetic variants.
+- `clean_dataset.py` - filters papers by search keywords.
 - `generate_embeddings.py` - creates sentence embeddings for cleaned papers.
 - `retrieval.py` - searches the embedded dataset by semantic similarity.
 - `claim_extractor.py` - extracts structured claims using Ollama.

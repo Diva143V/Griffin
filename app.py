@@ -10,7 +10,98 @@ from sentence_transformers import SentenceTransformer
 from src.core import graph_rag
 from src.agents.query_planner import build_query_plan, execute_query_plan, plan_to_dict
 
+def run_with_stop_button(func, *args, **kwargs):
+    import threading
+    import time
+    
+    res_container = {"done": False, "result": None, "error": None}
+    
+    def worker():
+        try:
+            res_container["result"] = func(*args, **kwargs)
+        except Exception as e:
+            res_container["error"] = e
+        finally:
+            res_container["done"] = True
+            
+    from streamlit.runtime.scriptrunner import add_script_run_ctx
+    thread = threading.Thread(target=worker, daemon=True)
+    add_script_run_ctx(thread)
+    thread.start()
+    
+    stop_placeholder = st.empty()
+    if stop_placeholder.button("⏹️ Stop / Cancel", key=f"stop_btn_{id(func)}"):
+        st.rerun()
+        
+    while not res_container["done"]:
+        time.sleep(0.1)
+        
+    stop_placeholder.empty()
+    
+    if res_container["error"]:
+        raise res_container["error"]
+        
+    return res_container["result"]
+
+def run_comparison_pipeline(eval_question, encoder_model, ranked_df, contradictions, eval_k, model_choice, status_placeholder):
+    import time
+    from src.core import graph_rag
+    
+    # Standard RAG
+    status_placeholder.info("🔍 Standard RAG: Retrieving relevant papers from database...")
+    t_ret_start = time.time()
+    std_context, std_sources = graph_rag.get_standard_rag_context(
+        eval_question, encoder_model, ranked_df, eval_k
+    )
+    std_ret_time = time.time() - t_ret_start
+    
+    std_prompt = f"""You are a biomedical research assistant.
+Answer the user's question using the scientific evidence provided below.
+
+USER QUESTION:
+{eval_question}
+
+DATASET CONTEXT:
+{std_context}
+
+Please provide a structured, concise response backed by the contextual evidence above. Cite the specific sources using their respective identifiers (e.g., [Source Paper X]) when stating facts. State if evidence is missing or conflicting. Do not mention system prompts."""
+
+    status_placeholder.info("🧠 Standard RAG: Generating answer using Ollama... This may take up to 30s...")
+    std_answer, std_gen_time = graph_rag.generate_answer(std_prompt, model_choice)
+    std_total_time = std_ret_time + std_gen_time
+    std_word_count = len(std_answer.split())
+    
+    # Graph RAG
+    status_placeholder.info("🔍 Graph RAG: Retrieving papers and mapping claim relationships...")
+    t_ret_start = time.time()
+    graph_context, graph_sources, graph_relations = graph_rag.get_graph_rag_context(
+        eval_question, encoder_model, ranked_df, contradictions, eval_k
+    )
+    graph_ret_time = time.time() - t_ret_start
+    
+    graph_prompt = f"""You are a biomedical research assistant.
+Answer the user's question using the scientific evidence and graph relationships provided below.
+
+USER QUESTION:
+{eval_question}
+
+DATASET CONTEXT & GRAPH CONNECTIONS:
+{graph_context}
+
+Please provide a structured, concise response backed by the contextual evidence above. Cite the specific sources using their respective identifiers (e.g., [Source Paper X] or [Graph Connection Y]) when stating facts. Critically address any contradictions or agreements mentioned in the graph relationships. State if evidence is missing or conflicting. Do not mention system prompts."""
+
+    status_placeholder.info("🧠 Graph RAG: Generating answer using Ollama... This may take up to 30s...")
+    graph_answer, graph_gen_time = graph_rag.generate_answer(graph_prompt, model_choice)
+    graph_total_time = graph_ret_time + graph_gen_time
+    graph_word_count = len(graph_answer.split())
+    
+    return (
+        std_answer, std_sources, std_total_time, std_ret_time, std_word_count,
+        graph_answer, graph_sources, graph_relations, graph_total_time, graph_ret_time, graph_word_count
+    )
+
 @st.cache_resource(ttl=60)
+
 def get_ollama_models():
     try:
         model_list = ollama.list()
@@ -29,14 +120,17 @@ def get_ollama_models():
         elif hasattr(model_list, "models"):
             names = [m.model for m in model_list.models]
             
-        target = "koesn/llama3-openbiollm-8b:latest"
+        target = "gemma4:e4b"
         if target not in names:
             names.append(target)
+        target_biollm = "koesn/llama3-openbiollm-8b:latest"
+        if target_biollm not in names:
+            names.append(target_biollm)
         if not names:
-            return ["koesn/llama3-openbiollm-8b:latest", "llama3.1:8b", "gemma3:4b", "gemma3:1b", "qwen3.5:9b"]
+            return ["gemma4:e4b", "koesn/llama3-openbiollm-8b:latest", "llama3.1:8b", "gemma3:4b", "gemma3:1b", "qwen3.5:9b"]
         return names
     except Exception:
-        return ["koesn/llama3-openbiollm-8b:latest", "llama3.1:8b", "gemma3:4b", "gemma3:1b", "qwen3.5:9b"]
+        return ["gemma4:e4b", "koesn/llama3-openbiollm-8b:latest", "llama3.1:8b", "gemma3:4b", "gemma3:1b", "qwen3.5:9b"]
 
 # Set page config for a clean, professional dashboard
 st.set_page_config(
@@ -307,6 +401,31 @@ def pick_claim_text(row):
 def load_encoder_model():
     return SentenceTransformer("all-MiniLM-L6-v2")
 
+def format_reasoning_text(text: str, mode: str) -> str:
+    """Format and separate reasoning (<think>...</think>) block from main text."""
+    if not text:
+        return ""
+        
+    import re
+    # Extract everything between <think> and </think> tags
+    think_match = re.search(r'<think>(.*?)</think>', text, re.DOTALL)
+    
+    if think_match:
+        think_content = think_match.group(1).strip()
+        # Remove the <think>...</think> block from the main text
+        clean_text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
+        
+        if mode == "Display in Expander":
+            with st.expander("💭 Show Reasoning Chain", expanded=False):
+                st.markdown(think_content)
+            return clean_text
+        elif mode == "Strip Completely":
+            return clean_text
+        else: # Raw Text
+            return text
+            
+    return text
+
 # Load existing datasets safely
 def load_data():
     ranked_df = pd.read_csv(CLINICAL_PAPERS_PATH) if os.path.exists(CLINICAL_PAPERS_PATH) else None
@@ -411,7 +530,7 @@ def render_network_graph(contradictions_dict):
         if t_a not in nodes_map:
             node_id_counter += 1
             nodes_map[t_a] = node_id_counter
-            lbl = (c_a[:40] + "...") if len(c_a) > 40 else c_a
+            lbl = f"Paper {node_id_counter}"
             nodes_list.append({
                 "id": node_id_counter,
                 "label": lbl,
@@ -427,7 +546,7 @@ def render_network_graph(contradictions_dict):
         if t_b not in nodes_map:
             node_id_counter += 1
             nodes_map[t_b] = node_id_counter
-            lbl = (c_b[:40] + "...") if len(c_b) > 40 else c_b
+            lbl = f"Paper {node_id_counter}"
             nodes_list.append({
                 "id": node_id_counter,
                 "label": lbl,
@@ -527,7 +646,7 @@ def render_network_graph(contradictions_dict):
             }},
             physics: {{
                 stabilization: true,
-                barnesHut: {{ gravitationalConstant: -2500, centralGravity: 0.35, springLength: 130 }}
+                barnesHut: {{ gravitationalConstant: -4000, centralGravity: 0.15, springLength: 180 }}
             }}
         }};
         var network = new vis.Network(container, data, options);
@@ -598,61 +717,123 @@ sc_api_key = st.sidebar.text_input(
 )
 # LLM Model Routing block
 st.sidebar.subheader("🤖 LLM Model Routing")
-routing_mode = st.sidebar.radio(
-    "Routing Strategy:",
-    ["Default Optimized Mixture", "Custom Specialist Routing"],
-    index=0,
-    help="Default uses a curated list of models optimized for each specific task. Custom lets you assign specific models."
+use_global_model = st.sidebar.toggle(
+    "Global Model ",
+    value=False,
+    help="Toggle ON to enforce a single global model for all agents and tasks, or OFF to use customized routing/default mixtures."
 )
 
 model_routing = {}
-if routing_mode == "Custom Specialist Routing":
-    st.sidebar.markdown("<small>Assign models to pipeline stages:</small>", unsafe_allow_html=True)
-    model_routing["planner"] = st.sidebar.selectbox(
-        "Query Planner / Router:",
+if use_global_model:
+    global_model_choice = st.sidebar.selectbox(
+        "Select Global Model:",
         installed_models,
-        index=installed_models.index("gemma3:4b") if "gemma3:4b" in installed_models else 0,
-        key="route_planner"
+        index=0,
+        key="global_model_select"
     )
-    model_routing["claim_extractor"] = st.sidebar.selectbox(
-        "Claim Extractor Agent:",
-        installed_models,
-        index=installed_models.index("gemma3:4b") if "gemma3:4b" in installed_models else 0,
-        key="route_claim_extractor"
-    )
-    model_routing["contradiction_detector"] = st.sidebar.selectbox(
-        "Contradiction Detector:",
-        installed_models,
-        index=installed_models.index("qwen3.5:9b") if "qwen3.5:9b" in installed_models else 0,
-        key="route_contradiction_detector"
-    )
-    model_routing["consensus_analyst"] = st.sidebar.selectbox(
-        "Consensus Analyst:",
-        installed_models,
-        index=installed_models.index("koesn/llama3-openbiollm-8b:latest") if "koesn/llama3-openbiollm-8b:latest" in installed_models else 0,
-        key="route_consensus_analyst"
-    )
-    model_routing["synthesis"] = st.sidebar.selectbox(
-        "Synthesis / generator:",
-        installed_models,
-        index=installed_models.index("gemma3:4b") if "gemma3:4b" in installed_models else 0,
-        key="route_synthesis"
-    )
-    model_routing["experiment_planner"] = st.sidebar.selectbox(
-        "Protocol & ELN Agent:",
-        installed_models,
-        index=installed_models.index("gemma3:4b") if "gemma3:4b" in installed_models else 0,
-        key="route_experiment_planner"
-    )
-else:
     model_routing = {
-        "planner": "llama3.1:8b",
-        "claim_extractor": "llama3.1:8b",
-        "contradiction_detector": "qwen3.5:9b",
-        "consensus_analyst": "koesn/llama3-openbiollm-8b:latest",
-        "synthesis": "llama3.1:8b",
-        "experiment_planner": "llama3.1:8b"
+        "planner": global_model_choice,
+        "claim_extractor": global_model_choice,
+        "contradiction_detector": global_model_choice,
+        "consensus_analyst": global_model_choice,
+        "synthesis": global_model_choice,
+        "experiment_planner": global_model_choice
     }
+    model_choice = global_model_choice
+else:
+    use_custom_routing = st.sidebar.toggle(
+        "Custom Specialist Routing",
+        value=False,
+        help="Toggle ON to manually assign specific models to pipeline stages, or OFF to use the default optimized mixture."
+    )
+
+    if use_custom_routing:
+        st.sidebar.markdown("<small>Assign models to pipeline stages:</small>", unsafe_allow_html=True)
+        model_routing["planner"] = st.sidebar.selectbox(
+            "Query Planner / Router:",
+            installed_models,
+            index=installed_models.index("gemma3:4b") if "gemma3:4b" in installed_models else 0,
+            key="route_planner"
+        )
+        model_routing["claim_extractor"] = st.sidebar.selectbox(
+            "Claim Extractor Agent:",
+            installed_models,
+            index=installed_models.index("gemma3:4b") if "gemma3:4b" in installed_models else 0,
+            key="route_claim_extractor"
+        )
+        model_routing["contradiction_detector"] = st.sidebar.selectbox(
+            "Contradiction Detector:",
+            installed_models,
+            index=installed_models.index("qwen3.5:9b") if "qwen3.5:9b" in installed_models else 0,
+            key="route_contradiction_detector"
+        )
+        model_routing["consensus_analyst"] = st.sidebar.selectbox(
+            "Consensus Analyst:",
+            installed_models,
+            index=installed_models.index("koesn/llama3-openbiollm-8b:latest") if "koesn/llama3-openbiollm-8b:latest" in installed_models else 0,
+            key="route_consensus_analyst"
+        )
+        model_routing["synthesis"] = st.sidebar.selectbox(
+            "Synthesis / generator:",
+            installed_models,
+            index=installed_models.index("gemma3:4b") if "gemma3:4b" in installed_models else 0,
+            key="route_synthesis"
+        )
+        model_routing["experiment_planner"] = st.sidebar.selectbox(
+            "Protocol & ELN Agent:",
+            installed_models,
+            index=installed_models.index("gemma3:4b") if "gemma3:4b" in installed_models else 0,
+            key="route_experiment_planner"
+        )
+    else:
+        model_routing = {
+            "planner": "llama3.1:8b",
+            "claim_extractor": "llama3.1:8b",
+            "contradiction_detector": "qwen3.5:9b",
+            "consensus_analyst": "koesn/llama3-openbiollm-8b:latest",
+            "synthesis": "llama3.1:8b",
+            "experiment_planner": "llama3.1:8b"
+        }
+
+st.sidebar.markdown("---")
+st.sidebar.markdown("### ⚙️ LLM Options")
+with st.sidebar.expander("Ollama Generation Options", expanded=True):
+    llm_temp = st.slider(
+        "Temperature:", 
+        min_value=0.0, 
+        max_value=2.0, 
+        value=0.7, 
+        step=0.1, 
+        key="llm_temperature",
+        help="Controls the creativity and randomness of the model's outputs. Lower values (e.g., 0.2) are more focused and deterministic, while higher values (e.g., 1.2) encourage broader variety."
+    )
+    llm_num_ctx = st.selectbox(
+        "Context Length (num_ctx):", 
+        [2048, 4096, 8192, 16384, 32768, 65536], 
+        index=2, 
+        key="llm_num_ctx",
+        help="Determines the size of the memory window (in tokens) assigned to the model. Larger context sizes allow the agent to evaluate more papers simultaneously but require more system RAM/VRAM."
+    )
+    llm_think = st.toggle(
+        "Enable Thinking Mode (/set think)", 
+        value=True, 
+        key="llm_think",
+        help="Forces reasoning models (like gemma4:e4b or DeepSeek-R1) to execute systematic thinking chains. Disable this if you want faster, direct answers without reasoning steps."
+    )
+    llm_reasoning_mode = st.selectbox(
+        "Reasoning Log Output:",
+        ["Display in Expander", "Strip Completely", "Raw Text"],
+        index=0,
+        key="llm_reasoning_mode",
+        help="Governs how the generated <think> tags are displayed in the dashboard: place them in a collapsible box, hide them completely for clean synthesis, or print them raw."
+    )
+
+st.session_state["llm_options"] = {
+    "temperature": llm_temp,
+    "num_ctx": llm_num_ctx,
+    "think": llm_think
+}
+st.session_state["reasoning_mode"] = llm_reasoning_mode
 
 st.sidebar.markdown("---")
 
@@ -702,80 +883,142 @@ with tabs[0]:
 
     planner_query = st.text_area(
         "Query to plan:",
-        value="Does metformin improve survival in HER2-positive breast cancer?",
+        value="",
         height=90,
         key="planner_query_input",
     )
-    planner_model = st.selectbox("Planner / answer model:", installed_models, index=0, key="planner_model_choice")
-    planner_threshold = st.slider("Relevance threshold (Cosine Similarity):", 0.10, 0.90, 0.60, step=0.05, key="planner_threshold")
-    planner_max_papers = st.number_input("Maximum papers to fetch from API:", min_value=1, max_value=500, value=20, step=5, key="planner_max_papers")
+    if use_global_model:
+        planner_model = global_model_choice
+        st.info(f"Locked to Global Model: `{global_model_choice}`")
+    else:
+        planner_model = st.selectbox("Planner / answer model:", installed_models, index=0, key="planner_model_choice")
+    
+    # Dynamic per-collector limit selectors
+    st.markdown("##### 📥 Max Papers to Fetch per Source:")
+    from src.collectors.collector_registry import get_collector_names
+    c_names = get_collector_names()
+    c_cols = st.columns(len(c_names))
+    collector_limits = {}
+    for idx, name in enumerate(c_names):
+        with c_cols[idx]:
+            collector_limits[name] = st.number_input(
+                f"{name}:",
+                min_value=0,
+                max_value=500,
+                value=20,
+                step=5,
+                key=f"limit_{name.lower()}"
+            )
+    planner_max_papers = sum(collector_limits.values())
 
     st.markdown("##### 🔬 Select Synthesis Components & Agent Targets:")
     col_opt1, col_opt2 = st.columns(2)
     with col_opt1:
-        use_manual_agents = st.checkbox("Override LLM Routing (manually select output agents)", value=False, key="use_manual_agents")
+        use_manual_agents = st.toggle("Override LLM Routing (manually select output agents)", value=False, key="use_manual_agents")
     with col_opt2:
-        force_fresh = st.checkbox("Force Fresh Retrieval (ignore database cache)", value=False, key="force_fresh")
+        force_fresh = st.toggle("Force Fresh Retrieval (ignore database cache)", value=False, key="force_fresh")
     
     forced_agents = None
     if use_manual_agents:
+        st.markdown("<small>Toggle individual specialist agents ON or OFF:</small>", unsafe_allow_html=True)
         col_c1, col_c2, col_c3, col_c4 = st.columns(4)
         selected_targets = []
         with col_c1:
-            if st.checkbox("Executive Synthesis & RAG", value=True, key="sel_synthesis"):
-                selected_targets.append("synthesis")
-        with col_c2:
-            if st.checkbox("Consensus Analyst Report", value=True, key="sel_consensus"):
+            if st.toggle("Claim Extractor", value=True, key="sel_claim_extractor", help="Extracts structured claims from abstracts"):
+                selected_targets.append("claim_extractor")
+            if st.toggle("Consensus Analyst", value=True, key="sel_consensus", help="Analyzes consensus and agreements"):
                 selected_targets.append("consensus_analyst")
-        with col_c3:
-            if st.checkbox("Lab Experiment Planner", value=True, key="sel_experiment"):
+        with col_c2:
+            if st.toggle("Evidence Ranker", value=True, key="sel_evidence", help="Ranks study designs and scores evidence quality"):
+                selected_targets.append("evidence_ranker")
+            if st.toggle("Lab Experiment Planner", value=True, key="sel_experiment", help="Designs step-by-step laboratory experiment protocols"):
                 selected_targets.append("experiment_planner")
-        with col_c4:
-            if st.checkbox("ELN Assistant Logger", value=True, key="sel_eln"):
+        with col_c3:
+            if st.toggle("Contradiction Detector", value=True, key="sel_contradiction", help="Performs pairwise contradiction analysis"):
+                selected_targets.append("contradiction_detector")
+            if st.toggle("ELN Assistant Logger", value=True, key="sel_eln", help="Logs formal entries to the Electronic Lab Notebook"):
                 selected_targets.append("eln_assistant")
+        with col_c4:
+            if st.toggle("Executive Synthesis & RAG", value=True, key="sel_synthesis", help="Generates main citation-verified synthesis report"):
+                selected_targets.append("synthesis")
         forced_agents = selected_targets
+
+    # Modal Confirmation Dialog
+    @st.dialog("🧬 Verify Research Intent & Routing")
+    def confirm_plan_dialog(plan_obj, forced_agts, routing_cfg, limits_cfg):
+        plan_dict = plan_to_dict(plan_obj)
+        st.markdown(f"**Parsed Research Intent:**\n> {plan_dict['intent']}")
+        st.markdown(f"**Assigned Pipeline Route:** `{plan_dict['route']}`")
+        st.markdown(f"**Primary LLM Router:** `{plan_dict['model']}`")
+        
+        st.markdown("---")
+        st.write("Does this match what you intended to search and execute? If you want to change or refine the query, describe it below:")
+        refinement = st.text_input("Refinement / clarification instruction:", placeholder="e.g., focus on clinical evidence, skip cellular in-vitro studies")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("Proceed & Execute", type="primary", key="btn_confirm_proceed"):
+                st.session_state.execute_confirmed = {
+                    "plan": plan_obj,
+                    "refinement": refinement,
+                    "forced_agents": forced_agts,
+                    "model_routing": routing_cfg,
+                    "collector_limits": limits_cfg
+                }
+                st.rerun()
+        with col2:
+            if st.button("Cancel & Edit", key="btn_confirm_cancel"):
+                st.rerun()
 
     plan = build_query_plan(planner_query, planner_model, default_top_k=planner_max_papers)
     plan_data = plan_to_dict(plan)
 
-    st.markdown(f"**Intent**: `{plan_data['intent']}`  |  **Route**: `{plan_data['route']}`  |  **Model**: `{plan_data['model']}`")
-
-    # Simplified Query Planner UI
-    if plan_data.get("notes"):
-        for note in plan_data["notes"]:
-            st.info(f"💡 {note}")
-
-    if st.button("Run Planned Query", type="primary", key="run_planned_query") and planner_query.strip():
+    # Process execution if confirmed from the dialog modal
+    if "execute_confirmed" in st.session_state and st.session_state.execute_confirmed:
+        conf = st.session_state.execute_confirmed
+        st.session_state.execute_confirmed = None
+        
+        exec_plan = conf["plan"]
+        if conf["refinement"].strip():
+            refined_query = f"{exec_plan.query} (Refinement: {conf['refinement']})"
+            exec_plan = build_query_plan(refined_query, planner_model, default_top_k=planner_max_papers)
+            
         status_placeholder = st.empty()
         def update_status_msg(msg: str):
             status_placeholder.info(f"🔄 {msg}")
             
-        with st.spinner("Planning route and generating answer..."):
-            st.session_state.execution = execute_query_plan(
-                plan, 
+        with st.spinner("Executing optimized specialist routing..."):
+            st.session_state.execution = run_with_stop_button(
+                execute_query_plan,
+                exec_plan, 
                 encoder_model, 
                 ranked_df, 
                 claims_df, 
                 contradictions, 
-                similarity_threshold=planner_threshold,
+                similarity_threshold=0.60,
                 email=pubmed_email,
                 api_key=sc_api_key,
-                forced_agents=forced_agents,
+                forced_agents=conf["forced_agents"],
                 force_fresh=force_fresh,
-                model_routing=model_routing,
-                status_callback=update_status_msg
+                model_routing=conf["model_routing"],
+                collector_limits=conf["collector_limits"],
+                status_callback=update_status_msg,
+                llm_options=st.session_state.get("llm_options")
             )
             # Reload datasets in memory so the sidebar and metrics update to the new topic
             ranked_df, claims_df, contradictions, synthesis_text = load_data()
             status_placeholder.empty()
             st.rerun()
 
+    if st.button("Run Planned Query", type="primary", key="run_planned_query") and planner_query.strip():
+        confirm_plan_dialog(plan, forced_agents, model_routing, collector_limits)
+
     if st.session_state.execution is not None:
         execution = st.session_state.execution
         
         # Retrieve synthesis answer directly from verification loop
         st.markdown("#### Routed Answer (Citation Verified)")
-        st.markdown(execution.get("synthesis_answer", "No answer generated."))
+        st.markdown(format_reasoning_text(execution.get("synthesis_answer", "No answer generated."), st.session_state["reasoning_mode"]))
         
         # Show verification loop details
         st.markdown("#### Citation Verification Loop (0/1 Auditor Status)")
@@ -871,66 +1114,75 @@ with tabs[0]:
                     st.markdown(f"*{rel['explanation']}*")
                     st.markdown("---")
 
-    with st.expander("Planner JSON", expanded=False):
-        st.json(plan_data)
+
 
 with tabs[1]:
     st.markdown("### 🔬 Executive Synthesis & Consensus Report")
     
-    # Check if there is data to compile into a PDF
-    active_report = ""
-    active_query = ""
-    active_protocol = ""
+    # Check if dataset is available
+    has_papers = os.path.exists(CLINICAL_PAPERS_PATH)
     
-    if st.session_state.execution is not None:
-        active_query = st.session_state.execution.get("plan", {}).get("query", "") or planner_query
-        active_report = st.session_state.execution.get("consensus", {}).get("consensus_report", "")
-        active_protocol = st.session_state.execution.get("experiment_protocol", "")
-    elif synthesis_text:
-        active_query = planner_query or "Scientific Research Compilation"
-        active_report = synthesis_text
-        if os.path.exists("dataset/protocol_draft.txt"):
+    if has_papers:
+        # Load sources and relations
+        temp_ranked = pd.read_csv(CLINICAL_PAPERS_PATH)
+        temp_sources = temp_ranked.to_dict(orient="records")
+        
+        # Load relations from contradictions.json
+        temp_relations = []
+        if os.path.exists(CONTRADICTION_PATH):
             try:
-                with open("dataset/protocol_draft.txt", "r", encoding="utf-8") as pf:
-                    active_protocol = pf.read()
+                with open(CONTRADICTION_PATH, "r", encoding="utf-8") as f:
+                    temp_contr = json.load(f)
+                # Combine contradictions, agreements, partial_agreements
+                for r in temp_contr.get("contradictions", []):
+                    temp_relations.append(dict(r, type="contradicts"))
+                for r in temp_contr.get("agreements", []):
+                    temp_relations.append(dict(r, type="agrees"))
+                for r in temp_contr.get("partial_agreements", []):
+                    temp_relations.append(dict(r, type="partial_agrees"))
             except Exception:
                 pass
                 
-    if active_report:
-        try:
-            from src.shared.pdf_generator import generate_synthesis_pdf
-            pdf_path = "dataset/scientific_consensus_report.pdf"
-            generate_synthesis_pdf(
-                query=active_query,
-                consensus_text=active_report,
-                protocol_text=active_protocol,
-                top_papers_df=ranked_df,
-                output_path=pdf_path
-            )
-            
-            with open(pdf_path, "rb") as pdf_file:
-                pdf_bytes = pdf_file.read()
-                
-            st.download_button(
-                label="📥 Export Report as PDF",
-                data=pdf_bytes,
-                file_name="scientific_consensus_report.pdf",
-                mime="application/pdf",
-                key="download_pdf_report"
-            )
-        except Exception as pe:
-            st.warning(f"Could not build PDF exporter: {pe}")
+        if st.button("🔬 Run Scientific Synthesis Agent", type="primary", key="run_synthesis_agent"):
+            with st.spinner("Executing Consensus & Synthesis Agent..."):
+                try:
+                    from src.agents.consensus_agent import analyze_consensus
+                    # Run the consensus agent
+                    consensus_res = analyze_consensus(
+                        query=planner_query,
+                        sources=temp_sources,
+                        relations=temp_relations,
+                        model_name=model_routing.get("consensus_analyst", "gemma3:4b"),
+                        options=st.session_state.get("llm_options")
+                    )
+                    
+                    # Store results in session state
+                    if st.session_state.execution is None:
+                        st.session_state.execution = {}
+                    st.session_state.execution["consensus"] = consensus_res
+                    
+                    # Write report to dataset/consensus_report.md
+                    os.makedirs(DATASET_DIR, exist_ok=True)
+                    with open(os.path.join(DATASET_DIR, "consensus_report.md"), "w", encoding="utf-8") as f:
+                        f.write(consensus_res.get("consensus_report", ""))
+                        
+                    # Refresh synthesis_text in memory
+                    synthesis_text = consensus_res.get("consensus_report", "")
+                    
+                    st.success(f"Synthesis completed! Confidence Level: {consensus_res.get('confidence_level')}")
+                except Exception as ex:
+                    st.error(f"Failed to run synthesis: {ex}")
 
     if st.session_state.execution is not None and st.session_state.execution.get("consensus"):
         con_report = st.session_state.execution["consensus"].get("consensus_report", "")
         if con_report:
-            st.markdown(con_report)
+            st.markdown(format_reasoning_text(con_report, st.session_state["reasoning_mode"]))
         else:
             st.info("No consensus report available for this query.")
     elif synthesis_text:
-        st.markdown(synthesis_text)
+        st.markdown(format_reasoning_text(synthesis_text, st.session_state["reasoning_mode"]))
     else:
-        st.info("No synthesis report found. Please run the contradiction and synthesis pipelines first.")
+        st.info("No synthesis report found. Please run the synthesis agent first.")
 
 with tabs[2]:
     st.markdown("### ⚡ Pairwise Analysis & Scientific Disputes")
@@ -949,10 +1201,13 @@ with tabs[2]:
                     status_placeholder = st.empty()
                     
                     status_placeholder.info("🔄 Stage 1: Extracting claims from papers using Ollama...")
+                    chosen_extractor = model_routing.get("claim_extractor", model_choice)
+                    chosen_detector = model_routing.get("contradiction_detector", model_choice)
+                    
                     extract_claims(
                         input_path="dataset/clean_papers.csv",
                         output_path="dataset/claims.csv",
-                        model=model_choice,
+                        model=chosen_extractor,
                         limit=50,
                         resume=False
                     )
@@ -964,7 +1219,7 @@ with tabs[2]:
                         output_csv="dataset/contradictions.csv",
                         output_json="dataset/contradictions.json",
                         output_report="dataset/contradiction_report.md",
-                        model=model_choice,
+                        model=chosen_detector,
                         embedding_model="all-MiniLM-L6-v2",
                         evidence_file="dataset/ranked_papers.csv",
                         max_pairs=20,
@@ -1109,7 +1364,7 @@ with tabs[5]:
     with q_col1:
         eval_question = st.text_input(
             "Enter your research query:",
-            value="Does metformin improve survival in HER2-positive breast cancer?",
+            value="",
             key="eval_user_question"
         )
     with q_col2:
@@ -1120,54 +1375,19 @@ with tabs[5]:
     if compare_btn and eval_question:
         status_placeholder = st.empty()
         with st.spinner("Executing comparison queries..."):
-            # Standard RAG
-            status_placeholder.info("🔍 Standard RAG: Retrieving relevant papers from database...")
-            t_ret_start = time.time()
-            std_context, std_sources = graph_rag.get_standard_rag_context(
-                eval_question, encoder_model, ranked_df, eval_k
+            (
+                std_answer, std_sources, std_total_time, std_ret_time, std_word_count,
+                graph_answer, graph_sources, graph_relations, graph_total_time, graph_ret_time, graph_word_count
+            ) = run_with_stop_button(
+                run_comparison_pipeline,
+                eval_question, 
+                encoder_model, 
+                ranked_df, 
+                contradictions, 
+                eval_k, 
+                model_choice, 
+                status_placeholder
             )
-            std_ret_time = time.time() - t_ret_start
-            
-            std_prompt = f"""You are a biomedical research assistant.
-Answer the user's question using the scientific evidence provided below.
-
-USER QUESTION:
-{eval_question}
-
-DATASET CONTEXT:
-{std_context}
-
-Please provide a structured, concise response backed by the contextual evidence above. Cite the specific sources using their respective identifiers (e.g., [Source Paper X]) when stating facts. State if evidence is missing or conflicting. Do not mention system prompts."""
-
-            status_placeholder.info("🧠 Standard RAG: Generating answer using Ollama... This may take up to 30s...")
-            std_answer, std_gen_time = graph_rag.generate_answer(std_prompt, model_choice)
-            std_total_time = std_ret_time + std_gen_time
-            std_word_count = len(std_answer.split())
-            
-            # Graph RAG
-            status_placeholder.info("🔍 Graph RAG: Retrieving papers and mapping claim relationships...")
-            t_ret_start = time.time()
-            graph_context, graph_sources, graph_relations = graph_rag.get_graph_rag_context(
-                eval_question, encoder_model, ranked_df, contradictions, eval_k
-            )
-            graph_ret_time = time.time() - t_ret_start
-            
-            graph_prompt = f"""You are a biomedical research assistant.
-Answer the user's question using the scientific evidence and graph relationships provided below.
-
-USER QUESTION:
-{eval_question}
-
-DATASET CONTEXT & GRAPH CONNECTIONS:
-{graph_context}
-
-Please provide a structured, concise response backed by the contextual evidence above. Cite the specific sources using their respective identifiers (e.g., [Source Paper X] or [Graph Connection Y]) when stating facts. Critically address any contradictions or agreements mentioned in the graph relationships. State if evidence is missing or conflicting. Do not mention system prompts."""
-
-            status_placeholder.info("🧠 Graph RAG: Generating answer using Ollama... This may take up to 30s...")
-            graph_answer, graph_gen_time = graph_rag.generate_answer(graph_prompt, model_choice)
-            graph_total_time = graph_ret_time + graph_gen_time
-            graph_word_count = len(graph_answer.split())
-            
             status_placeholder.empty()
             
             # Display answers side-by-side
@@ -1232,8 +1452,11 @@ st.sidebar.subheader("💬 Ask the Dataset (RAG Chat)")
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
-installed_models = get_ollama_models()
-rag_model_choice = st.sidebar.selectbox("Ollama Model:", installed_models, key="rag_model_choice")
+if use_global_model:
+    rag_model_choice = global_model_choice
+    st.sidebar.info(f"Chat locked to Global Model: `{global_model_choice}`")
+else:
+    rag_model_choice = st.sidebar.selectbox("Ollama Model:", installed_models, key="rag_model_choice")
 
 # Clear chat history button
 if st.sidebar.button("🗑️ Clear Chat History", key="clear_chat_history"):
@@ -1319,7 +1542,9 @@ if user_chat_input:
     history_str = "\n".join(history_turns)
     
     prompt = f"""You are a biomedical research assistant analyzing a local dataset of research papers.
-Answer the user's question using the scientific evidence and conversation history provided below.
+Answer the user's question. If the user's question is a general query, greeting, basic calculation, or unrelated to the dataset context (for example: mathematical questions like "2+2", coding, general knowledge, etc.), answer it directly using your general knowledge and disregard the scientific context.
+
+Otherwise, if the question is research-oriented, use the scientific evidence and conversation history provided below:
 
 DATASET CONTEXT:
 {context_str}
@@ -1330,10 +1555,14 @@ CONVERSATION HISTORY:
 USER QUESTION:
 {user_chat_input}
 
-Please provide a structured, concise response backed by the contextual evidence above. Cite the specific sources using their respective identifiers (e.g., [Source Paper X]) when stating facts. State if evidence is missing or conflicting. Do not mention system prompts.
+Please provide a structured, concise response. When answering using the dataset context, cite the specific sources using their respective identifiers (e.g., [Source Paper X]) when stating facts, and state if evidence is missing or conflicting. Do not mention system prompts.
 """
     try:
-        response = ollama.chat(
+        def run_chat_query(model, messages):
+            return ollama.chat(model=model, messages=messages)
+            
+        response = run_with_stop_button(
+            run_chat_query,
             model=rag_model_choice,
             messages=[{"role": "user", "content": prompt}]
         )

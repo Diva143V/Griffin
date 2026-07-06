@@ -1,4 +1,5 @@
 import argparse
+import re
 import pandas as pd
 
 def main():
@@ -21,7 +22,7 @@ def main():
         
         if keywords:
             print("Filtering with keywords:", keywords)
-            title_pat = "|".join(keywords)
+            title_pat = "|".join(re.escape(k) for k in keywords)
             filtered_df = df[
                 df["title_clean"].str.contains(title_pat, na=False) |
                 df["abstract_clean"].str.contains(title_pat, na=False)

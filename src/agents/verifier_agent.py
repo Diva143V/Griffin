@@ -1,19 +1,47 @@
-"""Verifier agent for lightweight consistency checks."""
+"""Verifier agent for lightweight consistency and citation alignment checks."""
 from __future__ import annotations
 
-from typing import Dict, List
+import re
+from typing import Dict, List, Any
 
 
-def verify_response(answer: str, sources: List[Dict[str, object]], relations: List[Dict[str, object]]) -> Dict[str, object]:
+def verify_response(answer: str, sources: List[Dict[str, Any]], relations: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Verify synthesis answer structure, citation indexing, and consistency checks."""
     answer_text = (answer or "").strip()
     findings: List[str] = []
 
     if not answer_text:
         findings.append("Answer is empty.")
+        return {"status": "review", "findings": findings}
+
     if not sources:
         findings.append("No sources were retrieved.")
-    if relations and "contradict" not in answer_text.lower() and "conflict" not in answer_text.lower():
-        findings.append("Relations exist but the answer does not mention disagreement or contradiction.")
+    else:
+        # Check for citation footprints in text (e.g., [1], [Source Paper 1], [Source 1])
+        citation_matches = re.findall(r'\[(?:Source Paper\s+|Source\s+|Paper\s+)?(\d+)\]', answer_text)
+        
+        if not citation_matches:
+            findings.append("No numerical citations found in the synthesis text (e.g., [1] or [Source Paper 1]).")
+        else:
+            total_sources = len(sources)
+            invalid_citations = []
+            for match in citation_matches:
+                try:
+                    idx = int(match)
+                    if idx <= 0 or idx > total_sources:
+                        invalid_citations.append(match)
+                except ValueError:
+                    invalid_citations.append(match)
+            
+            if invalid_citations:
+                findings.append(
+                    f"Citations pointing to invalid indices: {', '.join(sorted(set(invalid_citations)))}. "
+                    f"Total retrieved sources: {total_sources}."
+                )
 
+    if relations and not any(kw in answer_text.lower() for kw in ["contradict", "conflict", "agree", "differ", "disagree", "versus", "vs"]):
+        findings.append("Disagreement relations exist in the database, but the answer does not mention any conflict or debate.")
+
+    # Pass if no flags/warnings were raised
     status = "pass" if not findings else "review"
     return {"status": status, "findings": findings}

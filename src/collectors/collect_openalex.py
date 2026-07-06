@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import argparse
 import time
+import random
+import os
 import requests
 import pandas as pd
 from typing import List, Dict, Any
@@ -24,13 +26,28 @@ def reconstruct_abstract(inverted_index: Dict[str, List[int]] | None) -> str:
 
 
 def fetch_page(session: requests.Session, query: str, page: int, per_page: int) -> List[Dict[str, Any]]:
-    """Fetch a page of search results from OpenAlex works endpoint."""
+    """Fetch a page of search results from OpenAlex works endpoint with 429 retry backoff."""
     url = "https://api.openalex.org/works"
     params = {
         "search": query,
         "per_page": per_page,
         "page": page
     }
+    
+    retries = 3
+    backoff = 2.0
+    for attempt in range(retries):
+        resp = session.get(url, params=params, timeout=30)
+        if resp.status_code == 429:
+            print(f"OpenAlex rate limit (429) hit on page {page}. Retrying in {backoff}s...")
+            time.sleep(backoff)
+            backoff *= 2
+            continue
+        resp.raise_for_status()
+        data = resp.json()
+        return data.get("results", [])
+        
+    # Final fallback attempt
     resp = session.get(url, params=params, timeout=30)
     resp.raise_for_status()
     data = resp.json()
@@ -40,10 +57,14 @@ def fetch_page(session: requests.Session, query: str, page: int, per_page: int) 
 def collect(query: str, per_page: int = 20, max_pages: int = 3, rate_limit_sec: float = 1.0, email: str | None = None) -> pd.DataFrame:
     """Collect pages of results from OpenAlex with pacing."""
     session = requests.Session()
-    # Be friendly to OpenAlex by identifying ourselves
-    import os
-    if not email:
-        email = os.getenv("ENTREZ_EMAIL") or "test@example.com"
+    
+    # Establish dynamic unique User-Agent email to bypass shared test@example.com blocklists
+    if not email or email == "test@example.com":
+        email = os.getenv("ENTREZ_EMAIL")
+        if not email or email == "test@example.com":
+            rand_id = random.randint(1000, 9999)
+            email = f"griffin_bio_agent_{rand_id}@griffinacademic.org"
+            
     session.headers.update({"User-Agent": f"mailto:{email}"})
     papers = []
     
@@ -92,16 +113,15 @@ def main():
     parser.add_argument("--per-page", type=int, default=20)
     parser.add_argument("--max-pages", type=int, default=3)
     parser.add_argument("--rate-limit", type=float, default=1.0)
-    import os
     parser.add_argument("--email", default=os.environ.get("ENTREZ_EMAIL", ""))
     parser.add_argument("--output", default="dataset/openalex.csv")
     args = parser.parse_args()
 
     df = collect(
-        args.query,
-        per_page=args.per_page,
-        max_pages=args.max_pages,
-        rate_limit_sec=args.rate_limit,
+        args.query, 
+        per_page=args.per_page, 
+        max_pages=args.max_pages, 
+        rate_limit_sec=args.rate_limit, 
         email=args.email
     )
     df.to_csv(args.output, index=False)

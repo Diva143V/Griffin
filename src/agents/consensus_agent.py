@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List
 import ollama
 
 
@@ -10,7 +10,8 @@ def analyze_consensus(
     query: str,
     sources: List[Dict[str, Any]],
     relations: List[Dict[str, Any]],
-    model_name: str = "gemma3:4b"
+    model_name: str = "gemma3:4b",
+    options: Dict[str, Any] | None = None
 ) -> Dict[str, Any]:
     """Analyze the retrieved evidence and relations to find scientific consensus or divergence."""
     start_time = time.time()
@@ -18,7 +19,7 @@ def analyze_consensus(
     # 1. Format references, evidence and relationships
     evidence_desc = []
     for s in sources:
-        design = s.get("design", "Undetermined")
+        design = s.get("study_design", s.get("design", "Undetermined"))
         score = s.get("evidence_score", 5.0)
         sample = s.get("sample_size", "N/A")
         evidence_desc.append(
@@ -42,21 +43,23 @@ def analyze_consensus(
     # 2. Build Prompt
     system_prompt = "You are a senior Scientific Consensus Analyst. Your job is to analyze retrieved research evidence and connections to determine scientific consensus. Provide a highly detailed, comprehensive, and exhaustive scientific consensus report in markdown format. Be objective, thorough, and direct."
     user_prompt = f"""User Research Query: {query}
-
+ 
 Retrieved Paper Evidence:
 {evidence_str}
-
+ 
 Relationships Between Papers:
 {relations_str}
-
+ 
 Task:
-Write a scientific consensus assessment report. Include:
-1. CONSENSUS STATUS: State whether there is strong consensus, moderate consensus, or strong divergence in the literature.
-2. AGREEMENT POINTS: What do the papers agree on? (Elaborate in detail)
-3. KEY DISAGREEMENTS / DIVERGENCE: What are the main contradictions or differences in findings, and WHY do they occur (e.g., cell studies vs. human trials, sample size differences)?
-4. CLINICAL RECOMMENDATION / CONCLUSION: Based on the highest-quality evidence (higher evidence scores), what is the current scientific consensus recommendation?
+Write a rigorous scientific consensus assessment report in markdown format. You must cover the following sections in detail:
+1. **CONSENSUS STATUS**: Classify the status (Strong Consensus, Moderate Consensus, or Strong Divergence/Conflict). Provide an explicit rationale comparing the clinical quality (levels of evidence) and sample sizes of opposing vs. agreeing papers.
+2. **AGREEMENT POINTS & STRENGTH**: Detail the specific biological mechanisms, treatments, or dosages where papers agree. Quantify how many papers support this view (e.g., '3 out of 5 papers observe...').
+3. **KEY DISAGREEMENTS & CONTRADICTION ANALYSIS**: Analyze all contradiction pairs. Explain the technical or methodological divergence (e.g., does Paper A study in-vitro tumor cells at high concentrations while Paper B studies clinical outcomes in human populations?). Break down the discrepancies between in-vitro, in-vivo, and retrospective studies.
+4. **EVIDENCE MATRIX TABLE**: Create a clean markdown table summarizing:
+   | Paper Citation | Study Type / Design | Sample Size | Key Finding | Evidence Strength (high/moderate/low) |
+5. **CLINICAL DIRECTIVE / RECOMMENDATION**: Conclude with a definitive scientific summary based on the highest-tier evidence. Highlight missing gaps that require future experimental runs.
 
-Do not make up any information."""
+Do not make up any information, and ensure all claims are directly linked to the provided paper excerpts."""
 
     # 3. Call LLM
     try:
@@ -65,7 +68,8 @@ Do not make up any information."""
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
-            ]
+            ],
+            options=options
         )
         consensus_text = response["message"]["content"]
     except Exception as e:
@@ -74,15 +78,36 @@ Do not make up any information."""
     duration = time.time() - start_time
     
     # 4. Formulate Result
-    # Simple rule-based confidence estimator based on evidence scores of sources
+    # Multidimensional confidence estimator
     if sources:
+        # Calculate base evidence score average
         avg_score = sum(float(s.get("evidence_score", 5.0)) for s in sources) / len(sources)
-        if avg_score >= 8.0:
-            confidence = "High Confidence"
-        elif avg_score >= 5.0:
-            confidence = "Moderate Confidence"
+        
+        # Count randomized trials
+        rct_count = sum(1 for s in sources if any(term in str(s.get("study_design", "")).lower() for term in ["random", "rct"]))
+        
+        # Count contradictions
+        contradiction_count = sum(1 for r in relations if str(r.get("type", "")).lower() == "contradicts")
+        
+        # Multidimensional confidence score calculation
+        score_component = avg_score
+        rct_bonus = min(rct_count * 1.0, 2.0)  # Up to +2 bonus for multiple RCTs
+        contradiction_penalty = min(contradiction_count * 1.5, 3.0)  # Up to -3 penalty for contradictions
+        
+        final_confidence_metric = score_component + rct_bonus - contradiction_penalty
+        
+        if final_confidence_metric >= 7.5:
+            confidence = "High Confidence (Consistent High-Quality Evidence)"
+        elif final_confidence_metric >= 5.0:
+            if contradiction_count > 0:
+                confidence = "Moderate Confidence (Evidence Present but Conflicting)"
+            else:
+                confidence = "Moderate Confidence (Consistent Mid-Quality Evidence)"
         else:
-            confidence = "Low Confidence"
+            if contradiction_count > 1:
+                confidence = "Low Confidence (High Contradiction Rate / Divergent Evidence)"
+            else:
+                confidence = "Low Confidence (Limited/Low-Quality Evidence)"
     else:
         confidence = "Insufficient Evidence"
 
