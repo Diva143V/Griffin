@@ -1,4 +1,27 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, Component } from 'react';
+
+// Error Boundary Component
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error('Error caught by boundary:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return <div style={{ padding: '20px', color: 'var(--accent-rose)', textAlign: 'center' }}>Something went wrong. Please refresh the page.</div>;
+    }
+    return this.props.children;
+  }
+}
 import { 
   Compass, BookOpen, Zap, FileText, Search, Shield, Play, 
   Send, Trash2, Settings, Download, AlertTriangle, CheckCircle, 
@@ -17,6 +40,22 @@ function App() {
   const [googleKey, setGoogleKey] = useState('');
   const [selectedModel, setSelectedModel] = useState('gemma3:4b');
   const [geminiModel, setGeminiModel] = useState('gemini-2.5-flash');
+  
+  // LLM Options state
+  const [llmTemp, setLlmTemp] = useState(0.7);
+  const [llmNumCtx, setLlmNumCtx] = useState(8192);
+  const [llmThink, setLlmThink] = useState(true);
+  
+  // Model Routing state
+  const [useGlobalModel, setUseGlobalModel] = useState(true);
+  const [modelRouting, setModelRouting] = useState({
+    planner: 'llama3.1:8b',
+    claim_extractor: 'llama3.1:8b',
+    contradiction_detector: 'qwen3.5:9b',
+    consensus_analyst: 'koesn/llama3-openbiollm-8b:latest',
+    synthesis: 'llama3.1:8b',
+    experiment_planner: 'llama3.1:8b'
+  });
   
   // Pipeline/Log state
   const [ingesting, setIngesting] = useState(false);
@@ -247,7 +286,9 @@ function App() {
     };
     
     ws.onerror = (err) => {
-      setPipelineStatus('WebSocket connection failed.');
+      console.error('WebSocket error:', err);
+      setPipelineStatus(`WebSocket connection failed: ${err.type || 'Unknown error'}`);
+      addProcessLog(processId, `WebSocket connection failed: ${err.type || 'Unknown error'}`);
       setIngesting(false);
       failProcess(processId, 'WebSocket connection failed');
     };
@@ -275,7 +316,15 @@ function App() {
       const res = await fetch(`${API_BASE}/api/synthesis`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, model_name: selectedModel })
+        body: JSON.stringify({ 
+          query, 
+          model_name: selectedModel,
+          llm_options: {
+            temperature: llmTemp,
+            num_ctx: llmNumCtx,
+            think: llmThink
+          }
+        })
       });
       
       updateProcess(processId, { currentStep: 2, status: 'Analyzing relationships' });
@@ -1010,6 +1059,79 @@ function App() {
               <option value="gemini-2.5-pro">gemini-2.5-pro</option>
               <option value="gemini-1.5-flash">gemini-1.5-flash</option>
             </select>
+          </div>
+
+          {/* LLM Tuning Controls */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingTop: '8px', borderTop: '1px solid var(--border-color)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-secondary)' }}>
+              <Settings size={14} />
+              <span style={{ fontSize: '11px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px' }}>LLM Options</span>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <label style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                Temperature: {llmTemp}
+              </label>
+              <input 
+                type="range" 
+                min="0" 
+                max="2" 
+                step="0.1" 
+                value={llmTemp} 
+                onChange={(e) => setLlmTemp(parseFloat(e.target.value))}
+                style={{ width: '100%' }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <label style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Context Length</label>
+              <select value={llmNumCtx} onChange={(e) => setLlmNumCtx(parseInt(e.target.value))}>
+                <option value={2048}>2048 tokens</option>
+                <option value={4096}>4096 tokens</option>
+                <option value={8192}>8192 tokens</option>
+                <option value={16384}>16384 tokens</option>
+                <option value={32768}>32768 tokens</option>
+                <option value={65536}>65536 tokens</option>
+              </select>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <input 
+                type="checkbox" 
+                checked={llmThink} 
+                onChange={(e) => setLlmThink(e.target.checked)}
+                id="think-mode"
+              />
+              <label htmlFor="think-mode" style={{ fontSize: '11px', color: 'var(--text-secondary)', cursor: 'pointer' }}>
+                Enable Thinking Mode
+              </label>
+            </div>
+          </div>
+
+          {/* Model Routing Controls */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingTop: '8px', borderTop: '1px solid var(--border-color)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-secondary)' }}>
+              <Network size={14} />
+              <span style={{ fontSize: '11px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Model Routing</span>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <input 
+                type="checkbox" 
+                checked={useGlobalModel} 
+                onChange={(e) => setUseGlobalModel(e.target.checked)}
+                id="global-model"
+              />
+              <label htmlFor="global-model" style={{ fontSize: '11px', color: 'var(--text-secondary)', cursor: 'pointer' }}>
+                Use Global Model
+              </label>
+            </div>
+
+            {!useGlobalModel && (
+              <div style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                Per-agent routing (advanced)
+              </div>
+            )}
           </div>
         </div>
 
@@ -1860,4 +1982,10 @@ function App() {
   );
 }
 
-export default App;
+const AppWithErrorBoundary = () => (
+  <ErrorBoundary>
+    <App />
+  </ErrorBoundary>
+);
+
+export default AppWithErrorBoundary;

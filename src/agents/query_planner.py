@@ -25,7 +25,6 @@ from .verifier_agent import verify_response
 from .consensus_agent import analyze_consensus
 from .experiment_agent import design_protocol
 from .eln_agent import format_eln_entry
-from typing import Any, Dict, List, Optional, Tuple
 
 def get_valid_model(requested_model: str, fallback_priority: List[str] = None) -> Tuple[str, List[str]]:
     """Check if requested_model exists in Ollama's local list. If not, pick a fallback.
