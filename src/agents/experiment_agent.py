@@ -39,28 +39,92 @@ def design_protocol(
         suggested_controls = "Single agents alone vs. combination wells and vehicle controls"
 
     system_prompt = (
-        f"You are an expert Laboratory Protocol Planner specializing in {assay_focus}. "
-        "Your goal is to translate scientific findings into a concrete, reproducible laboratory experiment protocol. "
-        "Write your response in clean markdown format, being practical and scientifically rigorous."
+        f"You are an expert Laboratory Protocol Planner specializing in {assay_focus}. Your standards:\n"
+        "1. ONLY include reagents and procedures that exist and are commercially available\n"
+        "2. VALIDATE all concentrations against published references (e.g., IC50 values, published dosing)\n"
+        "3. Flag any speculative steps with [REQUIRES OPTIMIZATION]\n"
+        "4. Enforce reproducibility: every step must be quantified (no \"incubate until done\")\n"
+        "5. Include inter-assay variability expectations (CV \u00b1 X%)\n\n"
+        "BIOLOGICAL GUARDRAILS:\n"
+        "- Cell viability readouts: Must use validated assays (MTT, LDH, live/dead staining) \u2014 no guesses\n"
+        "- Incubation times: Cite literature for all durations (e.g., \"24h incubation per Jones et al. 2020\")\n"
+        "- Controls: Positive control MUST show \u226550% effect; negative must show <10% background\n"
+        "- Concentrations: Flag if dose exceeds known toxic range (e.g., >10\u00b5M for most small molecules in cells)"
     )
     
-    user_prompt = f"""Research Query: {query}
-Scientific Synthesis:
-{synthesis_report}
+    user_prompt = f"""RESEARCH QUERY: {query}
+SCIENTIFIC SYNTHESIS: {synthesis_report}
+ASSAY TYPE: {assay_focus}
 
-Task:
-Please design a structured, rigorous, and reproducible laboratory experiment protocol optimized for a {assay_focus}. Provide detailed, practical guidelines matching standard laboratory procedures:
-1. **EXPERIMENTAL HYPOTHESIS**: Define a testable hypothesis linking treatments to measurable biochemical readouts.
-2. **MATERIALS & REAGENTS**: Provide a comprehensive inventory table listing cell lines, chemical agents with exact concentration stocks (e.g., in mM/uM), assay detection kits, and analytical instrumentation.
-3. **PREPARATION & RECONSTITUTION**: Detailed instructions on reconstitution (e.g. dissolving in DMSO/PBS) and final working dilutions.
-4. **STEP-BY-STEP PROCEDURE**: Write a detailed, numbered laboratory protocol covering {suggested_steps}. Specify seeding densities (e.g., cells per well in 96-well format), exact incubation durations, temperature ranges (e.g. 37°C with 5% CO2), and detection parameters (e.g. PCR cycles, dye incubation limits).
-5. **CONTROLS & SHAM TREATMENTS**:
-   - **Negative Control**: Detailed setup for {suggested_controls.split(' vs. ')[0]}.
-   - **Positive Control**: Detailed setup for {suggested_controls.split(' vs. ')[1]}.
-6. **QUANTIFICATION & READOUT ANALYSIS**: Specify the instrumentation and exact readout values (e.g., absorbance wavelength at 570nm, fluorometric filter configurations, fold-change calculations using 2^-ddCt).
-7. **SAFETY & BIOSAFETY COMPLIANCE**: Detail biosafety level requirements (BSL-1/BSL-2) and disposal protocols.
+DESIGN PROTOCOL: {suggested_steps}
+POSITIVE CONTROL: {suggested_controls.split(' vs. ')[1]}
+NEGATIVE CONTROL: {suggested_controls.split(' vs. ')[0]}
 
-Ensure all instructions are biologically sound and directly support testing the research query. Do not make up any information."""
+TASK: Design a reproducible, validated laboratory protocol in markdown.
+
+## 1. EXPERIMENTAL HYPOTHESIS
+State as: "We hypothesize that [TREATMENT] will [MECHANISM \u2192 READOUT]"
+Example: "We hypothesize that metformin (5\u201325 \u00b5M, 48h) will suppress GLUT1 expression and reduce glucose uptake \u226530% in HepG2 cells"
+
+## 2. REAGENTS & MATERIALS TABLE
+| Item | Catalog # | Vendor | Stock Concentration | Final Working Concentration | Validation/Notes |
+|------|-----------|--------|-------|--------|---------|
+| [Drug/Reagent] | [ID] | [Vendor] | [X mM stock] | [Y \u00b5M final] | [e.g., "Validated in Jones et al. 2020; IC50 = 8 \u00b5M"] |
+| [Cell line] | [ATCC ID] | ATCC | N/A | Passage 3\u20138 | [e.g., "HepG2 hepatocytes; validated mycoplasma-free"] |
+
+## 3. STEP-BY-STEP PROCEDURE
+Write 10\u201315 numbered steps. EVERY step must include:
+- Exact quantities (cell count, incubation temp, duration in minutes/hours)
+- Validation reference: "Per [published method]"
+- Expected outcome: "Expect 90\u201395% viability post-treatment"
+- [REQUIRES OPTIMIZATION] if step is speculative
+
+Example:
+> 7. Treat cells with drug or control (45-min pre-incubation at 37\u00b0C, 5% CO2)
+>    - Add [Vehicle] or Metformin (5, 10, 25 \u00b5M final) to each well
+>    - Incubation: 48 hours at 37\u00b0C, 5% CO2 (standard per HepG2 culture guidelines)
+>    - Expected: Dose-dependent reduction in viability; positive control \u226560% reduction
+
+## 4. POSITIVE & NEGATIVE CONTROLS
+**Negative Control**: {suggested_controls.split(' vs. ')[0]}
+- Setup: [Exact procedure, including blanks and vehicle-only wells]
+- Expected outcome: <10% background signal (or cite literature CV%)
+- Validation: [Citation supporting this expectation]
+
+**Positive Control**: {suggested_controls.split(' vs. ')[1]}
+- Setup: [Exact procedure]
+- Expected outcome: \u226550% effect compared to vehicle
+- Validation: [Citation]
+
+## 5. READOUT & QUANTIFICATION
+- Assay: [Name] (validated kit or protocol)
+- Instrument: [Plate reader model, filters]
+- Raw data: [Wavelength, gain, integration time]
+- Calculations: [e.g., "% viability = (Treated OD570 \u2013 Blank) / (Vehicle OD570 \u2013 Blank) \u00d7 100"]
+- Statistical test: [ANOVA, n-fold, t-test with Benjamini\u2013Hochberg FDR correction]
+
+## 6. REPRODUCIBILITY & QUALITY CHECKLIST
+- [ ] All concentrations validated against IC50/published literature
+- [ ] Positive control expects \u226550% effect
+- [ ] Negative control expects <10% background
+- [ ] Incubation times justified by citation
+- [ ] Cell passage number constrained (e.g., P3\u2013P8)
+- [ ] Mycoplasma status verified
+- [ ] Replicate design specified (n=3 technical, m=3 biological)
+- [ ] Expected inter-assay CV: \u00b1X%
+
+## 7. SAFETY & DISPOSAL
+- Biosafety Level: [BSL-1/BSL-2]
+- Chemical hazards: [List]
+- Disposal protocol: [Cite institutional SOP]
+
+---
+
+OUTPUT RULES:
+- Do NOT invent reagent catalog numbers; use real vendors or flag as [REQUIRES SOURCING]
+- Do NOT propose concentrations outside published safe ranges without [REQUIRES OPTIMIZATION]
+- If literature is scarce: Flag entire protocol as [PRELIMINARY; REQUIRES LITERATURE SEARCH]
+- Max 4000 tokens; prioritize feasibility over exhaustive detail"""
 
     try:
         response = ollama.chat(

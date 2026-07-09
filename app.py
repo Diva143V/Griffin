@@ -9,6 +9,10 @@ import ollama
 from sentence_transformers import SentenceTransformer
 from src.core import graph_rag
 from src.agents.query_planner import build_query_plan, execute_query_plan, plan_to_dict
+from src.agents.report_agent import generate_overseer_report
+from src.agents.validation_agent import validate_report
+from src.agents.refinement_agent import refine_report
+from src.agents.peer_review_agent import review_findings
 
 def run_with_stop_button(func, *args, in_sidebar=False, **kwargs):
     import threading
@@ -743,6 +747,13 @@ sc_api_key = st.sidebar.text_input(
     help="Optional, unlocks Semantic Scholar searches.",
     key="sc_api_key_input"
 )
+google_api_key = st.sidebar.text_input(
+    "Google API Key:",
+    value="",
+    type="password",
+    help="Required to run the Gemini-powered web-grounded research report agent.",
+    key="google_api_key_input"
+)
 # LLM Model Routing block
 st.sidebar.subheader("🤖 LLM Model Routing")
 use_global_model = st.sidebar.toggle(
@@ -876,6 +887,7 @@ tabs = st.tabs([
     "📚 Ranked Clinical Evidence",
     "🔎 Claims Exploration",
     "🤖 RAG Performance Comparison",
+    "📋 Grounded Overseer Report",
 ])
 
 with tabs[0]:
@@ -1213,6 +1225,41 @@ with tabs[1]:
     else:
         st.info("No synthesis report found. Please run the synthesis agent first.")
 
+    # 🔬 Peer Review & Devil's Advocate Critique
+    if has_papers and (synthesis_text or (st.session_state.execution and "consensus" in st.session_state.execution)):
+        st.markdown("---")
+        with st.expander("🔬 Peer Review & Devil's Advocate Critique", expanded=False):
+            st.markdown("Run a critical peer review evaluation of the current findings to highlight weaknesses and confounding factors.")
+            google_key_to_use = google_api_key or os.environ.get("GEMINI_API_KEY", "")
+            if not google_key_to_use:
+                st.warning("🔑 Google API Key is required to run the Peer Review Agent. Please enter it in the sidebar.")
+            else:
+                gemini_model = st.selectbox(
+                    "Gemini Model for Critique:",
+                    ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-1.5-flash"],
+                    index=0,
+                    key="peer_review_model_choice"
+                )
+                if st.button("⚖️ Generate Peer Review Critique", key="run_peer_review_btn"):
+                    with st.spinner("Analyzing limitations and publication bias..."):
+                        try:
+                            findings_to_critique = synthesis_text if synthesis_text else st.session_state.execution.get("consensus", {}).get("consensus_report", "")
+                            review_res = run_with_stop_button(
+                                review_findings,
+                                api_key=google_key_to_use,
+                                query=planner_query,
+                                findings=findings_to_critique,
+                                papers=temp_sources,
+                                model_name=gemini_model
+                            )
+                            st.session_state["peer_review_critique"] = review_res.get("peer_review", "")
+                        except Exception as ex:
+                            st.error(f"Error during peer review: {ex}")
+            
+            if "peer_review_critique" in st.session_state and st.session_state["peer_review_critique"]:
+                st.markdown("### 🔬 Critical Appraisal Report")
+                st.markdown(st.session_state["peer_review_critique"])
+
 with tabs[2]:
     st.markdown("### ⚡ Pairwise Analysis & Scientific Disputes")
     
@@ -1449,7 +1496,190 @@ with tabs[5]:
                             st.markdown(f"- *{r['explanation']}*")
                             st.markdown("---")
 
+with tabs[6]:
+    st.markdown("### 📋 Grounded Research & Overseer Report")
+    st.caption("Generate a publication-grade scientific report combining local evidence with live web grounding, audited for hallucinations.")
 
+    google_key_to_use = google_api_key or os.environ.get("GEMINI_API_KEY", "")
+    if not google_key_to_use:
+        st.warning("🔑 Google API Key is required to run the Grounded Overseer Report. Please enter it in the sidebar.")
+    else:
+        # Load active dataset
+        has_papers = os.path.exists(CLINICAL_PAPERS_PATH)
+        if has_papers:
+            temp_ranked = pd.read_csv(CLINICAL_PAPERS_PATH)
+            temp_sources = temp_ranked.to_dict(orient="records")
+            
+            # Load relations
+            temp_relations = []
+            temp_contr = {}
+            if os.path.exists(CONTRADICTION_PATH):
+                try:
+                    with open(CONTRADICTION_PATH, "r", encoding="utf-8") as f:
+                        temp_contr = json.load(f)
+                    for r in temp_contr.get("contradictions", []):
+                        temp_relations.append(dict(r, type="contradicts"))
+                    for r in temp_contr.get("agreements", []):
+                        temp_relations.append(dict(r, type="agrees"))
+                    for r in temp_contr.get("partial_agreements", []):
+                        temp_relations.append(dict(r, type="partial_agrees"))
+                except Exception:
+                    pass
+            
+            # Load consensus report
+            local_consensus = ""
+            if os.path.exists(os.path.join(DATASET_DIR, "consensus_report.md")):
+                try:
+                    with open(os.path.join(DATASET_DIR, "consensus_report.md"), "r", encoding="utf-8") as f:
+                        local_consensus = f.read()
+                except Exception:
+                    pass
+
+            # Load protocol draft
+            local_protocol = ""
+            if os.path.exists(os.path.join(DATASET_DIR, "protocol_draft.txt")):
+                try:
+                    with open(os.path.join(DATASET_DIR, "protocol_draft.txt"), "r", encoding="utf-8") as f:
+                        local_protocol = f.read()
+                except Exception:
+                    pass
+
+            # Load ELN entry
+            local_eln = ""
+            if os.path.exists(os.path.join(DATASET_DIR, "eln_entry.txt")):
+                try:
+                    with open(os.path.join(DATASET_DIR, "eln_entry.txt"), "r", encoding="utf-8") as f:
+                        local_eln = f.read()
+                except Exception:
+                    pass
+
+            # Select Gemini Model
+            rep_col1, rep_col2 = st.columns([2, 1])
+            with rep_col1:
+                gemini_model = st.selectbox(
+                    "Select Gemini Model:",
+                    ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-1.5-flash"],
+                    index=0,
+                    key="report_gemini_model"
+                )
+            with rep_col2:
+                generate_btn = st.button("📋 Generate Overseer Report", type="primary", use_container_width=True)
+
+            # Generate Report Action
+            if generate_btn:
+                with st.spinner("Generating and Grounding Scientific Report (Gemini)..."):
+                    try:
+                        # Extract claims list
+                        claims_list = []
+                        if claims_df is not None:
+                            claims_list = claims_df.to_dict(orient="records")
+
+                        # Generate report
+                        report_res = run_with_stop_button(
+                            generate_overseer_report,
+                            api_key=google_key_to_use,
+                            query=planner_query,
+                            sources=temp_sources,
+                            claims=claims_list,
+                            contradictions=temp_contr,
+                            consensus_report=local_consensus,
+                            experiment_protocol=local_protocol,
+                            eln_entry=local_eln,
+                            model_name=gemini_model
+                        )
+                        st.session_state["overseer_report_text"] = report_res.get("report_text", "")
+                        
+                        # Validate report immediately
+                        st.session_state["validation_results"] = None
+                        if report_res.get("report_text") and "Error" not in report_res["report_text"]:
+                            with st.spinner("Auditing report for hallucinations..."):
+                                val_res = run_with_stop_button(
+                                    validate_report,
+                                    api_key=google_key_to_use,
+                                    query=planner_query,
+                                    agent_output=report_res["report_text"],
+                                    papers=temp_sources,
+                                    model_name=gemini_model
+                                )
+                                st.session_state["validation_results"] = val_res.get("validation_results", {})
+                    except Exception as e:
+                        st.error(f"Failed to generate report: {e}")
+
+            # Display active report
+            if "overseer_report_text" in st.session_state and st.session_state["overseer_report_text"]:
+                report_content = st.session_state["overseer_report_text"]
+                
+                # Check for validation results
+                val_data = st.session_state.get("validation_results", {})
+                if val_data:
+                    q_score = val_data.get("quality_score", 100)
+                    rec = val_data.get("recommendation", "proceed")
+                    issues = val_data.get("issues", [])
+                    halls = val_data.get("hallucinations", [])
+                    
+                    # Nice score meter card
+                    border_color = "#10b981" if rec == "proceed" else "#ef4444"
+                    bg_color = "#112015" if rec == "proceed" else "#2a0e12"
+                    
+                    st.markdown(
+                        f"""<div style='border: 1px solid {border_color}; background-color: {bg_color}; padding: 16px; border-radius: 8px; margin-bottom: 20px;'>
+                        <h4 style='margin: 0; color: {border_color};'>🛡️ Validation QA Auditor</h4>
+                        <div style='display: flex; gap: 40px; margin-top: 10px;'>
+                            <div><strong>Quality Score</strong>: <span style='font-size: 1.25rem; color: #fff;'>{q_score}/100</span></div>
+                            <div><strong>Recommendation</strong>: <span style='font-size: 1.25rem; color: #fff;'>{rec.upper()}</span></div>
+                        </div>
+                        </div>""",
+                        unsafe_allow_html=True
+                    )
+                    
+                    if issues:
+                        with st.expander(f"⚠️ Flagged Methodological Issues ({len(issues)})", expanded=False):
+                            for issue in issues:
+                                st.markdown(f"- {issue}")
+                    if halls:
+                        with st.expander(f"🚨 Hallucination Warnings ({len(halls)})", expanded=True):
+                            for hall in halls:
+                                st.markdown(f"- {hall}")
+                
+                # Render Report
+                st.markdown("### 📝 Grounded Report Content")
+                st.markdown(report_content)
+                
+                st.markdown("---")
+                
+                # Refinement Panel
+                st.markdown("### 🔄 Iterative Report Refinement")
+                feedback_input = st.text_area(
+                    "Submit feedback to refine the report (e.g., 'expand on drug concentration details', 'simplify interpretation'):",
+                    key="refinement_feedback_text",
+                    height=100
+                )
+                
+                if st.button("🔄 Refine Report", type="secondary"):
+                    if feedback_input:
+                        with st.spinner("Refining report based on feedback..."):
+                            try:
+                                refine_res = run_with_stop_button(
+                                    refine_report,
+                                    api_key=google_key_to_use,
+                                    original_report=report_content,
+                                    feedback=feedback_input,
+                                    model_name=gemini_model
+                                )
+                                st.session_state["overseer_report_text"] = refine_res.get("refined_report", "")
+                                st.success("Report refined successfully!")
+                                st.rerun()
+                            except Exception as ex:
+                                st.error(f"Error during report refinement: {ex}")
+                
+                st.download_button(
+                    "📥 Download Markdown Report",
+                    data=st.session_state["overseer_report_text"],
+                    file_name="grounded_overseer_report.md",
+                    mime="text/markdown"
+                )
+        else:
+            st.warning("⚠️ No active dataset found. Please run a query in the 'Query Planner' first to fetch papers.")
 
 # 3. Interactive Multi-Turn Chat (Ask the LLM with Dataset Context)
 st.sidebar.markdown("---")

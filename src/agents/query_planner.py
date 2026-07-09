@@ -185,13 +185,29 @@ Clean Keywords:"""
         return safe_clean(raw_query)
 
 
-def run_pipeline_ingestion(query: str, email: str = "test@example.com", api_key: str = "", model_name: str = "llama3.1:8b", top_k: int = 20, collector_limits: Optional[Dict[str, int]] = None) -> List[str]:
+def run_pipeline_ingestion(
+    query: str,
+    email: str = "test@example.com",
+    api_key: str = "",
+    model_name: str = "llama3.1:8b",
+    top_k: int = 20,
+    collector_limits: Optional[Dict[str, int]] = None,
+    status_callback: Optional[Callable[[str], None]] = None,
+) -> List[str]:
     """Run build_dataset, generate_embeddings, and evidence_ranker to ingest data with error boundaries."""
     logs = []
+
+    def log(message: str) -> None:
+        logs.append(message)
+        if status_callback:
+            try:
+                status_callback(message)
+            except Exception:
+                pass
     
     # 0. Extract clean scientific query
     search_query = clean_search_query(query, model_name)
-    logs.append(f"Extracted API search query: '{search_query}' from user prompt.")
+    log(f"Extracted API search query: '{search_query}' from user prompt.")
     print(f"Running dynamic ingestion for query: '{search_query}'...")
     
     # Define sources based on whether SemanticScholar API key is available
@@ -213,7 +229,7 @@ def run_pipeline_ingestion(query: str, email: str = "test@example.com", api_key:
 
     # 1. build_dataset
     try:
-        logs.append("Starting data collection...")
+        log("Starting data collection...")
         import json
         limits_str = json.dumps(collector_limits or {})
         max_res = sum(collector_limits.values()) if collector_limits else top_k
@@ -226,9 +242,9 @@ def run_pipeline_ingestion(query: str, email: str = "test@example.com", api_key:
             "--collector-limits", limits_str,
             "--run-filter"
         ], check=True)
-        logs.append("Data collection completed successfully.")
+        log("Data collection completed successfully.")
     except Exception as e:
-        logs.append(f"Data collection failed: {e}")
+        log(f"Data collection failed: {e}")
 
     # 2. generate_embeddings
     try:
@@ -237,18 +253,18 @@ def run_pipeline_ingestion(query: str, email: str = "test@example.com", api_key:
             "--input", "dataset/clean_papers.csv",
             "--output", "dataset/clean_papers_with_embeddings.csv"
         ], check=True)
-        logs.append("Embedding generation completed successfully.")
+        log("Embedding generation completed successfully.")
     except Exception as e:
-        logs.append(f"Embedding generation failed: {e}")
+        log(f"Embedding generation failed: {e}")
 
     # 3. evidence_ranker
     try:
         subprocess.run([
             sys.executable, "src/core/evidence_ranker.py"
         ], check=True)
-        logs.append("Evidence quality ranking completed successfully.")
+        log("Evidence quality ranking completed successfully.")
     except Exception as e:
-        logs.append(f"Evidence quality ranking failed: {e}")
+        log(f"Evidence quality ranking failed: {e}")
         
     return logs
 
@@ -394,7 +410,7 @@ def execute_query_plan(
         if status_callback:
             status_callback("Ingesting fresh research papers from external APIs (PMC, OpenAlex, SemanticScholar)... This may take up to a minute...")
         try:
-            ingest_logs = run_pipeline_ingestion(search_query, email=email, api_key=api_key, model_name=resolved_routing["planner"], top_k=plan.top_k, collector_limits=collector_limits)
+            ingest_logs = run_pipeline_ingestion(search_query, email=email, api_key=api_key, model_name=resolved_routing["planner"], top_k=plan.top_k, collector_limits=collector_limits, status_callback=status_callback)
             notes.extend(ingest_logs)
             # Reload datasets
             if os.path.exists("dataset/ranked_papers.csv"):

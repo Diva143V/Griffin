@@ -41,25 +41,60 @@ def analyze_consensus(
     relations_str = "\n\n".join(relations_desc) if relations_desc else "None"
 
     # 2. Build Prompt
-    system_prompt = "You are a senior Scientific Consensus Analyst. Your job is to analyze retrieved research evidence and connections to determine scientific consensus. Provide a highly detailed, comprehensive, and exhaustive scientific consensus report in markdown format. Be objective, thorough, and direct."
-    user_prompt = f"""User Research Query: {query}
- 
-Retrieved Paper Evidence:
-{evidence_str}
- 
-Relationships Between Papers:
-{relations_str}
- 
-Task:
-Write a rigorous scientific consensus assessment report in markdown format. You must cover the following sections in detail:
-1. **CONSENSUS STATUS**: Classify the status (Strong Consensus, Moderate Consensus, or Strong Divergence/Conflict). Provide an explicit rationale comparing the clinical quality (levels of evidence) and sample sizes of opposing vs. agreeing papers.
-2. **AGREEMENT POINTS & STRENGTH**: Detail the specific biological mechanisms, treatments, or dosages where papers agree. Quantify how many papers support this view (e.g., '3 out of 5 papers observe...').
-3. **KEY DISAGREEMENTS & CONTRADICTION ANALYSIS**: Analyze all contradiction pairs. Explain the technical or methodological divergence (e.g., does Paper A study in-vitro tumor cells at high concentrations while Paper B studies clinical outcomes in human populations?). Break down the discrepancies between in-vitro, in-vivo, and retrospective studies.
-4. **EVIDENCE MATRIX TABLE**: Create a clean markdown table summarizing:
-   | Paper Citation | Study Type / Design | Sample Size | Key Finding | Evidence Strength (high/moderate/low) |
-5. **CLINICAL DIRECTIVE / RECOMMENDATION**: Conclude with a definitive scientific summary based on the highest-tier evidence. Highlight missing gaps that require future experimental runs.
+    system_prompt = (
+        "You are a Senior Scientific Consensus Analyst. Your mandate:\n"
+        "1. Synthesize multi-paper evidence into a rigorous consensus statement\n"
+        "2. Quantify agreement/disagreement with explicit counts and percentages\n"
+        "3. Classify disagreements by root cause: methodology, population, dose, study phase (in-vitro vs clinical)\n"
+        "4. Assign confidence scores to every consensus claim (LOW/MEDIUM/HIGH)\n"
+        "5. Output ONLY markdown; no preamble or meta-commentary\n\n"
+        "DEPTH REQUIREMENTS:\n"
+        "- CONSENSUS STATUS: Minimum 3 sentences justifying classification\n"
+        "- AGREEMENT POINTS: For each point, state \u22653 papers and cite effect sizes (e.g., \"median 34% reduction\")\n"
+        "- KEY DISAGREEMENTS: For each contradiction, provide 2-3 mechanistic explanations\n"
+        "- EVIDENCE MATRIX: Include Publication Year, Sample Size, Study Phase (in-vitro/animal/clinical), Funding Source"
+    )
+    user_prompt = f"""QUERY: {query}
+PAPERS: {evidence_str}
+CONTRADICTIONS: {relations_str}
 
-Do not make up any information, and ensure all claims are directly linked to the provided paper excerpts."""
+TASK: Write a rigorous consensus report with these mandatory sections:
+
+## 1. CONSENSUS STATUS
+Classify as: Strong Consensus (\u226575% papers agree) | Moderate Consensus (50-74%) | Weak/Conflicted (<50%)
+- Report vote count explicitly: "7/10 papers show..." OR "findings are split: 5 pro, 4 con, 1 neutral"
+- For each side, list 2 representative papers with effect sizes
+- Assign confidence: [LOW | MEDIUM | HIGH] based on sample size and study quality
+
+## 2. AGREEMENT DETAILS
+List specific findings where papers agree:
+- Biological mechanism: [Description]. Supporting papers: [X, Y, Z]
+- Dosage/concentration: [Range]. Effect size: [median % change]. Papers: [List]
+- Clinical context: [Population/condition]. Papers: [List]
+
+## 3. CONTRADICTION ANALYSIS
+For EACH conflicting paper pair:
+| Paper A | Paper B | Root Cause | Mechanistic Explanation |
+|---------|---------|-----------|------------------------|
+| [Cite A] | [Cite B] | Methodology / Population / Dose | Explanation here |
+
+## 4. EVIDENCE MATRIX TABLE
+| Citation | Year | Design | n | Phase | Key Finding | Effect Size | Quality |
+|----------|------|--------|---|-------|-------------|-------------|---------|
+| [Paper] | [YYYY] | RCT/Cohort/In-vitro | [N] | Clinical/Animal | Finding | [+X% or effect size] | [HIGH/MED/LOW] |
+
+## 5. CLINICAL RECOMMENDATION
+**Consensus Statement**: [1-2 sentence definitive conclusion based on highest-tier evidence]
+**Confidence**: [HIGH/MEDIUM/LOW]
+**Critical Gaps**: List 2-3 future experiments needed to resolve remaining uncertainty
+
+---
+
+OUTPUT RULES:
+- Do NOT exceed 3000 tokens
+- If papers conflict fundamentally: Use subheadings (### Subgroup Analysis) to separate findings
+- If <5 papers: Flag as "Limited Evidence Base"
+- Cite papers ONLY by their identifiers; do NOT quote verbatim"""
 
     # 3. Call LLM
     try:
@@ -80,8 +115,16 @@ Do not make up any information, and ensure all claims are directly linked to the
     # 4. Formulate Result
     # Multidimensional confidence estimator
     if sources:
-        # Calculate base evidence score average
-        avg_score = sum(float(s.get("evidence_score", 5.0)) for s in sources) / len(sources)
+        # Calculate base evidence score average safely
+        def safe_float(val):
+            try:
+                if val is None or str(val).strip() == "" or str(val).lower() == "n/a":
+                    return 5.0
+                return float(val)
+            except (ValueError, TypeError):
+                return 5.0
+                
+        avg_score = sum(safe_float(s.get("evidence_score", 5.0)) for s in sources) / len(sources)
         
         # Count randomized trials
         rct_count = sum(1 for s in sources if any(term in str(s.get("study_design", "")).lower() for term in ["random", "rct"]))
