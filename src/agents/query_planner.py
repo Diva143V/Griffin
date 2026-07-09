@@ -211,44 +211,52 @@ def run_pipeline_ingestion(query: str, email: str = "test@example.com", api_key:
             except Exception:
                 pass
 
+    os.makedirs("dataset", exist_ok=True)
+    with open("dataset/terminal.log", "w", encoding="utf-8") as f:
+        f.write(f"--- Starting Dynamic Ingestion for query: '{search_query}' ---\n")
+
     # 1. build_dataset
-    try:
-        logs.append("Starting data collection...")
-        import json
-        limits_str = json.dumps(collector_limits or {})
-        max_res = sum(collector_limits.values()) if collector_limits else top_k
-        subprocess.run([
-            sys.executable, "build_dataset.py",
-            "--sources", *sources,
-            "--query", search_query,
-            "--max-results", str(max_res),
-            "--email", email,
-            "--collector-limits", limits_str,
-            "--run-filter"
-        ], check=True)
-        logs.append("Data collection completed successfully.")
-    except Exception as e:
-        logs.append(f"Data collection failed: {e}")
+    with open("dataset/terminal.log", "a", encoding="utf-8") as log_file:
+        try:
+            logs.append("Starting data collection...")
+            import json
+            limits_str = json.dumps(collector_limits or {})
+            max_res = sum(collector_limits.values()) if collector_limits else top_k
+            subprocess.run([
+                sys.executable, "build_dataset.py",
+                "--sources", *sources,
+                "--query", search_query,
+                "--max-results", str(max_res),
+                "--email", email,
+                "--collector-limits", limits_str,
+                "--run-filter"
+            ], check=True, stdout=log_file, stderr=subprocess.STDOUT)
+            logs.append("Data collection completed successfully.")
+        except Exception as e:
+            logs.append(f"Data collection failed: {e}")
+            log_file.write(f"\nData collection failed: {e}\n")
 
-    # 2. generate_embeddings
-    try:
-        subprocess.run([
-            sys.executable, "generate_embeddings.py",
-            "--input", "dataset/clean_papers.csv",
-            "--output", "dataset/clean_papers_with_embeddings.csv"
-        ], check=True)
-        logs.append("Embedding generation completed successfully.")
-    except Exception as e:
-        logs.append(f"Embedding generation failed: {e}")
+        # 2. generate_embeddings
+        try:
+            subprocess.run([
+                sys.executable, "generate_embeddings.py",
+                "--input", "dataset/clean_papers.csv",
+                "--output", "dataset/clean_papers_with_embeddings.csv"
+            ], check=True, stdout=log_file, stderr=subprocess.STDOUT)
+            logs.append("Embedding generation completed successfully.")
+        except Exception as e:
+            logs.append(f"Embedding generation failed: {e}")
+            log_file.write(f"\nEmbedding generation failed: {e}\n")
 
-    # 3. evidence_ranker
-    try:
-        subprocess.run([
-            sys.executable, "src/core/evidence_ranker.py"
-        ], check=True)
-        logs.append("Evidence quality ranking completed successfully.")
-    except Exception as e:
-        logs.append(f"Evidence quality ranking failed: {e}")
+        # 3. evidence_ranker
+        try:
+            subprocess.run([
+                sys.executable, "src/core/evidence_ranker.py"
+            ], check=True, stdout=log_file, stderr=subprocess.STDOUT)
+            logs.append("Evidence quality ranking completed successfully.")
+        except Exception as e:
+            logs.append(f"Evidence quality ranking failed: {e}")
+            log_file.write(f"\nEvidence quality ranking failed: {e}\n")
         
     return logs
 
@@ -549,7 +557,7 @@ def execute_query_plan(
             claim_text = matched["claim"].fillna("").astype(str).str.lower()
             score = pd.Series(0, index=matched.index, dtype="int64")
             for term in query_terms:
-                score += claim_text.str.contains(term, na=False).astype(int)
+                score += claim_text.str.contains(term, na=False, regex=False).astype(int)
             matched = matched.assign(match_score=score)
             matched = matched[matched["match_score"] > 0].sort_values(["match_score"], ascending=False).head(plan.top_k)
             result["claims"] = [

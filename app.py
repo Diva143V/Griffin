@@ -9,8 +9,12 @@ import ollama
 from sentence_transformers import SentenceTransformer
 from src.core import graph_rag
 from src.agents.query_planner import build_query_plan, execute_query_plan, plan_to_dict
+from src.agents.report_agent import generate_overseer_report
+from src.agents.validation_agent import run_qa_audit
+from src.agents.refinement_agent import refine_report_section
+from src.agents.peer_review_agent import run_peer_review
 
-def run_with_stop_button(func, *args, in_sidebar=False, **kwargs):
+def run_with_stop_button(func, *args, in_sidebar=False, show_terminal=False, **kwargs):
     import threading
     import time
     
@@ -33,10 +37,28 @@ def run_with_stop_button(func, *args, in_sidebar=False, **kwargs):
     if stop_placeholder.button("⏹️ Stop / Cancel", key=f"stop_btn_{id(func)}"):
         st.rerun()
         
+    expander_placeholder = st.empty()
+    log_placeholder = None
+    if show_terminal:
+        with expander_placeholder.container():
+            with st.expander("🖥️ Background Process Logs (Terminal)", expanded=True):
+                log_placeholder = st.empty()
+        
     while not res_container["done"]:
-        time.sleep(0.1)
+        time.sleep(0.5)
+        if show_terminal and log_placeholder:
+            if os.path.exists("dataset/terminal.log"):
+                try:
+                    with open("dataset/terminal.log", "r", encoding="utf-8") as f:
+                        log_content = f.read()
+                        if log_content:
+                            log_placeholder.code(log_content, language="bash")
+                except Exception:
+                    pass
         
     stop_placeholder.empty()
+    if show_terminal:
+        expander_placeholder.empty()
     
     if res_container["error"]:
         raise res_container["error"]
@@ -743,6 +765,36 @@ sc_api_key = st.sidebar.text_input(
     help="Optional, unlocks Semantic Scholar searches.",
     key="sc_api_key_input"
 )
+google_api_key = st.sidebar.text_input(
+    "Google API Key (Gemini):",
+    value="",
+    type="password",
+    help="Required for Grounded Overseer Report and Peer Review capabilities.",
+    key="google_api_key_input"
+)
+
+@st.cache_data(show_spinner=False, ttl=300)
+def get_gemini_models(api_key):
+    if not api_key:
+        return ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-1.5-pro-latest", "gemini-1.5-flash-latest"]
+    try:
+        import google.generativeai as genai
+        genai.configure(api_key=api_key)
+        valid_models = []
+        for m in genai.list_models():
+            if 'generateContent' in m.supported_generation_methods:
+                valid_models.append(m.name.replace('models/', ''))
+        return valid_models if valid_models else ["gemini-1.5-pro", "gemini-1.5-flash"]
+    except Exception:
+        return ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-1.5-pro-latest", "gemini-1.5-flash-latest"]
+
+gemini_model_list = get_gemini_models(google_api_key)
+gemini_model_choice = st.sidebar.selectbox(
+    "Gemini Model (for Overseer/Review):",
+    gemini_model_list,
+    index=0,
+    key="gemini_model_choice"
+)
 # LLM Model Routing block
 st.sidebar.subheader("🤖 LLM Model Routing")
 use_global_model = st.sidebar.toggle(
@@ -876,6 +928,7 @@ tabs = st.tabs([
     "📚 Ranked Clinical Evidence",
     "🔎 Claims Exploration",
     "🤖 RAG Performance Comparison",
+    "🧐 Grounded Overseer Report",
 ])
 
 with tabs[0]:
@@ -1031,7 +1084,8 @@ with tabs[0]:
                 model_routing=conf["model_routing"],
                 collector_limits=conf["collector_limits"],
                 status_callback=update_status_msg,
-                llm_options=st.session_state.get("llm_options")
+                llm_options=st.session_state.get("llm_options"),
+                show_terminal=True
             )
             # Reload datasets in memory so the sidebar and metrics update to the new topic
             ranked_df, claims_df, contradictions, synthesis_text = load_data()
@@ -1212,6 +1266,20 @@ with tabs[1]:
         st.markdown(format_reasoning_text(synthesis_text, st.session_state["reasoning_mode"]))
     else:
         st.info("No synthesis report found. Please run the synthesis agent first.")
+        
+    st.markdown("---")
+    st.markdown("#### 🔬 Peer Review & Devil's Advocate Critique")
+    has_report_for_review = (st.session_state.execution is not None and st.session_state.execution.get("consensus")) or synthesis_text
+    if has_report_for_review:
+        with st.expander("Run Critical Appraisal", expanded=False):
+            focus_area = st.text_input("Review Focus Area:", value="Methodological flaws, logical gaps, and unsupported claims", key="pr_focus")
+            if st.button("Run Devil's Advocate", type="primary", key="btn_run_pr"):
+                with st.spinner("Reviewing synthesis..."):
+                    report_to_review = st.session_state.execution["consensus"].get("consensus_report", "") if (st.session_state.execution and st.session_state.execution.get("consensus")) else synthesis_text
+                    pr_result = run_with_stop_button(run_peer_review, google_api_key, report_to_review, focus_area, gemini_model_choice)
+                    st.markdown(pr_result)
+    else:
+        st.info("Generate or load a synthesis report first to enable Peer Review.")
 
 with tabs[2]:
     st.markdown("### ⚡ Pairwise Analysis & Scientific Disputes")
@@ -1581,3 +1649,60 @@ Please provide a structured, concise response. When answering using the dataset 
         st.rerun()
     except Exception as err:
         st.sidebar.error(f"Failed to query Ollama. Error: {err}")
+
+with tabs[6]:
+    st.markdown("### 🧐 Grounded Overseer Report")
+    st.caption("Synthesize findings into an executive report and audit for logic/hallucinations using Gemini.")
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        st.markdown("#### Report Generator")
+        custom_inst = st.text_area("Custom Instructions (optional):", value="Focus on clinical translation and highlight major controversies.", key="overseer_inst")
+        
+        if st.button("Generate Overseer Report", type="primary", key="btn_gen_overseer"):
+            with st.spinner("Compiling comprehensive report..."):
+                local_consensus = synthesis_text
+                eln_logs_content = ""
+                if st.session_state.execution and st.session_state.execution.get("eln_entry"):
+                    eln_logs_content = st.session_state.execution["eln_entry"]
+                
+                report = run_with_stop_button(generate_overseer_report, google_api_key, local_consensus, eln_logs_content, custom_inst, gemini_model_choice)
+                st.session_state["overseer_report"] = report
+                st.session_state["overseer_validation"] = None
+                st.rerun()
+                
+        if st.session_state.get("overseer_report"):
+            st.markdown("---")
+            st.markdown(st.session_state["overseer_report"])
+            
+    with col2:
+        st.markdown("#### 🛡️ Hallucination QA Auditor")
+        if st.session_state.get("overseer_report"):
+            if st.button("Run Validation Audit", key="btn_run_audit"):
+                with st.spinner("Auditing report..."):
+                    audit_res = run_with_stop_button(run_qa_audit, google_api_key, st.session_state["overseer_report"], gemini_model_choice)
+                    st.session_state["overseer_validation"] = audit_res
+                    st.rerun()
+                    
+            if st.session_state.get("overseer_validation"):
+                val = st.session_state["overseer_validation"]
+                score = val.get("score", 0)
+                color = "green" if score > 80 else "orange" if score > 50 else "red"
+                st.markdown(f"**Credibility Score:** <span style='color:{color}; font-size:1.5em; font-weight:bold;'>{score}/100</span>", unsafe_allow_html=True)
+                st.markdown(f"*{val.get('feedback', '')}*")
+                
+                if val.get("issues"):
+                    st.markdown("**Issues Identified:**")
+                    for issue in val["issues"]:
+                        st.markdown(f"- {issue}")
+                        
+        st.markdown("---")
+        st.markdown("#### ✍️ Iterative Refiner")
+        if st.session_state.get("overseer_report"):
+            refine_inst = st.text_area("Refinement Instructions:", placeholder="e.g. Make the conclusion more conservative.", key="refine_inst")
+            if st.button("Refine Report", key="btn_refine"):
+                with st.spinner("Refining..."):
+                    refined_text = run_with_stop_button(refine_report_section, google_api_key, st.session_state["overseer_report"], refine_inst, gemini_model_choice)
+                    st.session_state["overseer_report"] = refined_text
+                    st.rerun()
