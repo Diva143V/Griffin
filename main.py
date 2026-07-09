@@ -125,6 +125,9 @@ class ChatRequest(BaseModel):
     chat_history: List[Dict[str, str]]
     model_name: str = "gemma3:4b"
 
+class ExtractClaimsRequest(BaseModel):
+    model_name: str = "gemma3:4b"
+
 @app.get("/api/status")
 async def get_status():
     """Check if clean papers exist, returning basic dataset info."""
@@ -178,16 +181,26 @@ async def get_status():
 async def create_plan(req: PlanRequest):
     """Generate the query plan and model routing dictionary."""
     try:
+        print(f"Building query plan for: {req.query} with model: {req.model_name}")
         plan = build_query_plan(req.query, req.model_name)
+        print(f"Plan built successfully: {plan}")
         routing = route_executor(req.query, req.model_name)
+        print(f"Routing determined: {routing}")
         return {
+            "intent": getattr(plan, 'intent', plan.query),
+            "route": getattr(plan, 'route', 'Standard RAG Pipeline'),
+            "model": getattr(plan, 'model', req.model_name),
+            "search_terms": getattr(plan, 'collector_targets', getattr(plan, 'target_collectors', [])),
+            "pipeline_steps": [step.name if hasattr(step, 'name') else str(step) for step in getattr(plan, 'steps', getattr(plan, 'required_agents', []))],
+            "routing": routing,
             "query": plan.query,
-            "target_collectors": plan.target_collectors,
-            "required_agents": plan.required_agents,
-            "explanation": plan.explanation,
-            "routing": routing
+            "target_collectors": getattr(plan, 'collector_targets', getattr(plan, 'target_collectors', [])),
+            "required_agents": getattr(plan, 'steps', getattr(plan, 'required_agents', [])),
+            "explanation": getattr(plan, 'intent', getattr(plan, 'explanation', plan.query))
         }
     except Exception as e:
+        import traceback
+        print(f"Error in /api/plan: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.websocket("/api/ws/ingest")
@@ -523,6 +536,35 @@ Please provide a structured, concise response. When answering using the dataset 
             "sources": retrieved_sources
         }
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/extract-claims")
+async def extract_claims_api(req: ExtractClaimsRequest):
+    """Extract claims from loaded papers."""
+    ranked_df, _ = load_dataset_data()
+    if ranked_df is None or len(ranked_df) == 0:
+        raise HTTPException(status_code=400, detail="No active dataset. Run ingestion first.")
+    try:
+        from src.core.claim_extractor import extract_claims
+        loop = asyncio.get_event_loop()
+        # Run claim extraction
+        result = await loop.run_in_executor(
+            None,
+            lambda: extract_claims(
+                input_path="dataset/clean_papers.csv",
+                output_path="dataset/claims.csv",
+                model=req.model_name,
+                limit=50,
+                resume=False
+            )
+        )
+        # Load and return claims
+        claims_df = pd.read_csv("dataset/claims.csv")
+        claims = claims_df.to_dict(orient="records")
+        return {"claims": claims, "relations": {}}
+    except Exception as e:
+        import traceback
+        print(f"Error in extract_claims: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
