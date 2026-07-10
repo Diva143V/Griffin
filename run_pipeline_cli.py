@@ -41,7 +41,7 @@ if __name__ == "__main__":
             model_routing = default_routing
         
         # Read LLM options from environment or use defaults
-        default_llm_opts = {"temperature": 0.7, "num_ctx": 8192, "think": True}
+        default_llm_opts = {"temperature": 0.7, "num_ctx": 8192, "num_predict": 4096}
         
         env_llm_opts = os.environ.get("GRIFFIN_LLM_OPTS", "")
         if env_llm_opts:

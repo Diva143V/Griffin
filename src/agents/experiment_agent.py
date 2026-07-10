@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Dict
-import ollama
+from typing import Any, Dict, Optional
+from ..shared.llm import chat as llm_chat
 
 from ..shared.config import MODEL_ROUTING
 
@@ -67,17 +67,18 @@ Please design a structured, rigorous, and reproducible laboratory experiment pro
 Ensure all instructions are biologically sound and directly support testing the research query. Do not make up any information."""
 
     try:
-        response = ollama.chat(
-            model=model_name,
+        response = llm_chat(
+            model_name,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            options=options
+            task="protocol",
+            options=options,
         )
         protocol_text = response["message"]["content"]
     except Exception as e:
-        protocol_text = f"Error calling Experiment Agent: {e}"
+        protocol_text = f"Error generating experimental protocol: {e}"
 
     duration = time.time() - start_time
     

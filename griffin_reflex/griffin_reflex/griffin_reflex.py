@@ -219,7 +219,7 @@ class State(rx.State):
     
     llm_temperature: float = 0.7
     llm_num_ctx: str = "8192"
-    llm_think: bool = True
+    llm_num_predict: str = "4096"
     llm_reasoning_mode: str = "Display in Expander"
     
     rag_model_choice: str = "llama3.1:8b"
@@ -358,7 +358,7 @@ class State(rx.State):
     @rx.event
     def set_llm_num_ctx(self, val: str): self.llm_num_ctx = val
     @rx.event
-    def set_llm_think(self, val: bool): self.llm_think = val
+    def set_llm_num_predict(self, val: str): self.llm_num_predict = val
     @rx.event
     def set_llm_reasoning_mode(self, val: str): self.llm_reasoning_mode = val
     @rx.event
@@ -605,7 +605,7 @@ class State(rx.State):
             
         env = os.environ.copy()
         env["GRIFFIN_ROUTING"] = json.dumps(self.get_actual_model_routing)
-        env["GRIFFIN_LLM_OPTS"] = json.dumps({"temperature": self.llm_temperature, "num_ctx": int(self.llm_num_ctx), "think": self.llm_think})
+        env["GRIFFIN_LLM_OPTS"] = json.dumps({"temperature": self.llm_temperature, "num_ctx": int(self.llm_num_ctx), "num_predict": int(self.llm_num_predict)})
         
         cmd = [sys.executable, cli_path, self.query, self.email, self.api_key, self.sc_api_key]
         
@@ -784,7 +784,12 @@ def sidebar():
                 rx.text(f"Temperature: {State.llm_temperature}"),
                 rx.slider(default_value=[0.7], min=0.0, max=2.0, step=0.1, on_change=State.set_llm_temperature),
                 rx.select(["2048", "4096", "8192", "16384", "32768", "65536"], value=State.llm_num_ctx, on_change=State.set_llm_num_ctx),
-                rx.checkbox("Enable Thinking Mode", checked=State.llm_think, on_change=State.set_llm_think),
+                rx.text("Max output tokens (num_predict)", size="2", weight="bold"),
+                rx.select(
+                    ["1024", "2048", "3072", "4096", "8192"],
+                    value=State.llm_num_predict,
+                    on_change=State.set_llm_num_predict,
+                ),
                 rx.select(["Display in Expander", "Strip Completely", "Raw Text"], value=State.llm_reasoning_mode, on_change=State.set_llm_reasoning_mode),
                 
                 rx.divider(),

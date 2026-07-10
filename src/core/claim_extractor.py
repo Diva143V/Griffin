@@ -13,6 +13,8 @@ import argparse
 import os
 import re
 from typing import Dict, List, Optional
+import concurrent.futures
+from ..shared.llm import chat as llm_chat
 
 import pandas as pd
 from pydantic import BaseModel, ValidationError
@@ -105,6 +107,29 @@ def load_existing_titles(path: str) -> set:
     return set(existing["title"].astype(str).str.strip().str.lower().tolist())
 
 
+def _process_one_row(row, model, prompt_builder, resume, existing_titles):
+    title = str(row["title"]).strip()
+    abstract = str(row["abstract"]).strip()
+    if not abstract:
+        return None, None
+    if resume and title.lower() in existing_titles:
+        return None, None
+    prompt = prompt_builder(title, abstract)
+    try:
+        resp = llm_chat(model, messages=[{"role": "user", "content": prompt}],
+                        task="extract", format=ClaimOutput.model_json_schema())
+        parsed = parse_output(resp["message"]["content"])
+        return title, {
+            "title": title, "claim": parsed["claim"], "stance": parsed["stance"],
+            "reason": parsed["reason"], "claim_output": resp["message"]["content"], "model": model,
+        }, None
+    except Exception as exc:
+        return title, {
+            "title": title, "claim": "", "stance": "", "reason": "",
+            "claim_output": f"ERROR: {exc}", "model": model,
+        }, exc
+
+
 def extract_claims(
     input_path: str,
     output_path: str,
@@ -136,67 +161,32 @@ def extract_claims(
             rows = []
 
     processed_count = 0
-    for idx, row in df.iterrows():
-        if limit is not None and processed_count >= limit:
-            break
+    to_process = [r for _, r in df.iterrows()]
+    if limit is not None:
+        to_process = to_process[:limit]
 
-        title = str(row["title"]).strip()
-        abstract = str(row["abstract"]).strip()
-
-        if not abstract:
-            continue
-
-        title_key = title.lower()
-        if resume and title_key in existing_titles:
-            continue
-
-        prompt = build_prompt(title, abstract)
-
-        try:
-            response = ollama.chat(
-                model=model,
-                messages=[{"role": "user", "content": prompt}],
-                format=ClaimOutput.model_json_schema()
-            )
-            output = response["message"]["content"]
-            parsed = parse_output(output)
-
-            rows.append(
-                {
-                    "title": title,
-                    "claim": parsed["claim"],
-                    "stance": parsed["stance"],
-                    "reason": parsed["reason"],
-                    "claim_output": output,
-                    "model": model,
-                }
-            )
-
-            existing_titles.add(title_key)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as ex:
+        futures = [ex.submit(_process_one_row, r, model, build_prompt, resume, existing_titles)
+                   for r in to_process]
+        for fut in concurrent.futures.as_completed(futures):
+            result = fut.result()
+            if result[1] is None:
+                continue
+            title, record, err = result
+            rows.append(record)
+            existing_titles.add(title.lower())
             processed_count += 1
-
-            print("\n" + "=" * 60)
-            print(f"PAPER {processed_count}")
-            print("=" * 60)
-            print(output)
-
+            if err:
+                print(f"Error processing paper: {err}")
+            else:
+                print("\n" + "=" * 60)
+                print(f"PAPER {processed_count}")
+                print("=" * 60)
+                print(record["claim_output"])
+            
             if save_every and processed_count % save_every == 0:
                 pd.DataFrame(rows).to_csv(output_path, index=False)
                 print(f"Checkpoint saved to {output_path} ({len(rows)} rows)")
-
-        except Exception as exc:
-            rows.append(
-                {
-                    "title": title,
-                    "claim": "",
-                    "stance": "",
-                    "reason": "",
-                    "claim_output": f"ERROR: {exc}",
-                    "model": model,
-                }
-            )
-            processed_count += 1
-            print(f"Error processing paper {idx + 1}: {exc}")
 
     claims_df = pd.DataFrame(rows)
     claims_df.to_csv(output_path, index=False)

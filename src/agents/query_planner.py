@@ -18,6 +18,8 @@ import pandas as pd
 import numpy as np
 import chromadb
 import ollama
+import concurrent.futures
+from ..shared.llm import chat as llm_chat
 
 from .planner_agent import QueryPlan, build_query_plan, plan_to_dict
 from .retriever_agent import retrieve_graph, retrieve_standard
@@ -162,12 +164,13 @@ Clean Keywords:"""
         return ' '.join(cleaned_text.split())
 
     try:
-        response = ollama.chat(
-            model=cleaner_model,
+        response = llm_chat(
+            cleaner_model,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
-            ]
+            ],
+            task="extract",
         )
         cleaned = response["message"]["content"].strip()
         
@@ -280,9 +283,10 @@ Return only a JSON list of strings, for example: ["synthesis", "consensus_analys
 Do not output any other explanation or text.
 """
     try:
-        response = ollama.chat(
-            model=model_name,
-            messages=[{"role": "user", "content": prompt}]
+        response = llm_chat(
+            model_name,
+            messages=[{"role": "user", "content": prompt}],
+            task="route",
         )
         content = response["message"]["content"].strip()
         # Clean markdown formatting if present
@@ -573,49 +577,82 @@ def execute_query_plan(
     else:
         result["claims"] = []
 
-    # 4. Generate Synthesis Answer with Verification Feedback Loop (0/1 Loop) - Dynamic Execution
-    synthesis_answer = ""
-    verification_trace = []
-    
-    if "synthesis" in executed_agents or not executed_agents:
+    # ---- 4/5/6: run synthesis, consensus, and experiment concurrently ----
+    run_synthesis_now = ("synthesis" in executed_agents) or not executed_agents
+    run_consensus_now = "consensus_analyst" in executed_agents
+    run_experiment_now = "experiment_planner" in executed_agents
+
+    def _do_synthesis():
+        if not run_synthesis_now:
+            return None
         if status_callback:
-            status_callback("Generating scientific synthesis answer and auditing citations (Verification Loop)... This might take 30-60 seconds...")
-        system_content = "You are a senior scientific research analyst. Answer the user's question using the scientific evidence provided. Provide a highly detailed, comprehensive, and exhaustive scientific synthesis. Elaborate on the mechanisms of action, clinical evidence, study designs, sample sizes, and outcomes."
-        user_content = f"USER QUESTION: {plan.query}\n\nCONTEXT: {result['context']}\n\nPlease cite specific sources using identifiers like [Source Paper X] or [Graph Connection Y]. Address any contradictions in detail."
-
-        synthesis_start = time.time()
+            status_callback("Generating scientific synthesis answer and auditing citations (Verification Loop)...")
+        system_content = ("You are a senior scientific research analyst. Answer the user's question using the "
+                          "scientific evidence provided. Provide a highly detailed, comprehensive synthesis. "
+                          "Elaborate on mechanisms, clinical evidence, study designs, sample sizes, and outcomes.")
+        user_content = (f"USER QUESTION: {plan.query}\n\nCONTEXT: {result['context']}\n\n"
+                        f"Cite specific sources using identifiers like [Source Paper X] or [Graph Connection Y]. "
+                        f"Address any contradictions in detail.")
+        trace = []
+        answer = ""
         for attempt in range(1, 4):
-            # Generate synthesis
             try:
-                response = ollama.chat(
-                    model=resolved_routing["synthesis"],
-                    messages=[
-                        {"role": "system", "content": system_content},
-                        {"role": "user", "content": user_content}
-                    ],
-                    options=llm_options
-                )
-                synthesis_answer = response["message"]["content"]
+                resp = llm_chat(resolved_routing["synthesis"],
+                                messages=[{"role": "system", "content": system_content},
+                                          {"role": "user", "content": user_content}],
+                                task="synthesis", user_options=llm_options)
+                answer = resp["message"]["content"]
             except Exception as e:
-                synthesis_answer = f"Error generating synthesis: {e}"
+                answer = f"Error generating synthesis: {e}"
                 break
-
-            # Run verification check
-            verify_res = verify_response(synthesis_answer, result.get("sources", []), result.get("relations", []))
-            verification_trace.append({
-                "attempt": attempt,
-                "status": verify_res.get("status"),
-                "findings": verify_res.get("findings")
-            })
-
-            if verify_res.get("status") == "pass":
+            vr = verify_response(answer, result.get("sources", []), result.get("relations", []))
+            trace.append({"attempt": attempt, "status": vr.get("status"), "findings": vr.get("findings")})
+            if vr.get("status") == "pass":
                 break
-            else:
-                # Append feedback to prompt for next attempt
-                findings_str = "\n".join(f"- {f}" for f in verify_res.get("findings", []))
-                user_content += f"\n\n[Verification Feedback - Attempt {attempt} Failed]\nFindings:\n{findings_str}\nPlease correct the above citation or logical consistency issues in your updated answer."
-        routing_stats["synthesis"]["duration_sec"] = round(time.time() - synthesis_start, 2)
+            findings_str = "\n".join(f"- {f}" for f in vr.get("findings", []))
+            user_content += (f"\n\n[Verification Feedback - Attempt {attempt} Failed]\n"
+                             f"Findings:\n{findings_str}\nPlease correct these issues.")
+        return answer, trace
 
+    def _do_consensus():
+        if not run_consensus_now:
+            return None
+        if status_callback:
+            status_callback("Analyzing scientific consensus and extracting agreements/contradictions...")
+        import hashlib
+        cache_key = hashlib.md5(
+            f"{plan.query}_{resolved_routing['consensus_analyst']}_{len(result.get('sources', []))}".encode()
+        ).hexdigest()
+        if not hasattr(execute_query_plan, "_consensus_cache"):
+            execute_query_plan._consensus_cache = {}
+        if cache_key in execute_query_plan._consensus_cache:
+            return execute_query_plan._consensus_cache[cache_key]
+        cres = analyze_consensus(plan.query, result.get("sources", []), result.get("relations", []),
+                                 model_name=resolved_routing["consensus_analyst"], options=llm_options)
+        execute_query_plan._consensus_cache[cache_key] = cres
+        return cres
+
+    def _do_experiment():
+        if not run_experiment_now:
+            return None
+        if status_callback:
+            status_callback("Designing step-by-step laboratory experiment protocol...")
+        return design_protocol(plan.query, synthesis_answer or plan.query,
+                               model_name=resolved_routing["experiment_planner"], options=llm_options)
+
+    synthesis_start = time.time()
+    synthesis_answer = ""
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as ex:
+        f_synth = ex.submit(_do_synthesis)
+        f_cons = ex.submit(_do_consensus)
+        f_exp = ex.submit(_do_experiment)
+        synth_out = f_synth.result()
+        cons_out = f_cons.result()
+        exp_out = f_exp.result()
+    routing_stats["synthesis"]["duration_sec"] = round(time.time() - synthesis_start, 2)
+
+    if synth_out:
+        synthesis_answer, verification_trace = synth_out
         result["synthesis_answer"] = synthesis_answer
         result["verification"] = verification_trace[-1] if verification_trace else {"status": "pass", "findings": []}
         result["verification_trace"] = verification_trace
@@ -623,54 +660,32 @@ def execute_query_plan(
         result["synthesis_answer"] = "Synthesis report was not requested for this query by the Executor Router."
         result["verification"] = {"status": "skipped", "findings": []}
 
-    # Simple in-memory cache for Consensus Agent
-    if not hasattr(execute_query_plan, "_consensus_cache"):
-        execute_query_plan._consensus_cache = {}
-
-    # 5. Run Consensus Agent - Dynamic Execution
-    if "consensus_analyst" in executed_agents:
-        if status_callback:
-            status_callback("Analyzing scientific consensus and extracting agreements/contradictions...")
-        consensus_start = time.time()
-        
-        # Calculate cache key
-        import hashlib
-        cache_key = hashlib.md5(f"{plan.query}_{resolved_routing['consensus_analyst']}_{len(result.get('sources', []))}".encode()).hexdigest()
-        
-        if cache_key in execute_query_plan._consensus_cache:
-            consensus_res = execute_query_plan._consensus_cache[cache_key]
-        else:
-            consensus_res = analyze_consensus(plan.query, result.get("sources", []), result.get("relations", []), model_name=resolved_routing["consensus_analyst"], options=llm_options)
-            execute_query_plan._consensus_cache[cache_key] = consensus_res
-
-        routing_stats["consensus_analyst"]["duration_sec"] = round(time.time() - consensus_start, 2)
-        result["consensus"] = consensus_res
+    if cons_out:
+        routing_stats["consensus_analyst"]["duration_sec"] = round(cons_out.get("execution_time_sec", 0.0), 2)
+        result["consensus"] = cons_out
         try:
             os.makedirs("dataset", exist_ok=True)
             with open("dataset/consensus_report.md", "w", encoding="utf-8") as f:
-                f.write(consensus_res["consensus_report"])
+                f.write(cons_out["consensus_report"])
         except Exception:
             pass
 
-    # 6. Run Experiment Agent - Dynamic Execution
-    if "experiment_planner" in executed_agents:
-        if status_callback:
-            status_callback("Designing step-by-step laboratory experiment protocol...")
-        exp_start = time.time()
-        experiment_res = design_protocol(plan.query, synthesis_answer or plan.query, model_name=resolved_routing["experiment_planner"], options=llm_options)
-        result["experiment_protocol"] = experiment_res["protocol_draft"]
+    # ELN depends on the experiment output, so it runs after.
+    if exp_out:
+        result["experiment_protocol"] = exp_out["protocol_draft"]
+        routing_stats["experiment_planner"]["duration_sec"] = round(exp_out.get("execution_time_sec", 0.0), 2)
         try:
             os.makedirs("dataset", exist_ok=True)
             with open("dataset/protocol_draft.txt", "w", encoding="utf-8") as f:
-                f.write(experiment_res["protocol_draft"])
+                f.write(exp_out["protocol_draft"])
         except Exception:
             pass
-
-        # 7. Run ELN Agent - Dynamic Execution
         if "eln_assistant" in executed_agents:
             if status_callback:
                 status_callback("Formatting and logging entry to the Electronic Lab Notebook (ELN)...")
-            eln_res = format_eln_entry("Dr. Scientist", "Metformin Oncology Project", experiment_res["protocol_draft"], "Pre-incubated cells for 24h before treatment.", model_name=resolved_routing["experiment_planner"], options=llm_options)
+            eln_res = format_eln_entry("Dr. Scientist", "Griffin Bio Project", exp_out["protocol_draft"],
+                                       "Pre-incubated cells for 24h before treatment.",
+                                       model_name=resolved_routing["experiment_planner"], options=llm_options)
             result["eln_entry"] = eln_res["eln_entry"]
             try:
                 os.makedirs("dataset", exist_ok=True)
@@ -678,7 +693,6 @@ def execute_query_plan(
                     f.write(eln_res["eln_entry"])
             except Exception:
                 pass
-        routing_stats["experiment_planner"]["duration_sec"] = round(time.time() - exp_start, 2)
 
     if "synthesis_answer" in result and result["synthesis_answer"]:
         try:

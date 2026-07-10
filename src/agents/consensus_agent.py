@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import time
 from typing import Any, Dict, List
-import ollama
+from ..shared.llm import chat as llm_chat
 
 from ..shared.config import MODEL_ROUTING
 
@@ -102,17 +102,18 @@ OUTPUT RULES:
 
     # 3. Call LLM
     try:
-        response = ollama.chat(
-            model=model_name,
+        response = llm_chat(
+            model_name,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            options=options
+            task="consensus",
+            options=options,
         )
         consensus_text = response["message"]["content"]
     except Exception as e:
-        consensus_text = f"Error calling Consensus Agent: {e}"
+        consensus_text = f"Error generating consensus analysis: {str(e)}"
 
     duration = time.time() - start_time
     

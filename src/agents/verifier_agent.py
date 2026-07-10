@@ -2,7 +2,30 @@
 from __future__ import annotations
 
 import re
+import functools
 from typing import Dict, List, Any
+
+@functools.lru_cache(maxsize=1)
+def _nli_classifier():
+    """Lazy-load the NLI classifier once and reuse it across all verifications."""
+    from transformers import pipeline
+    import torch
+    try:
+        return pipeline(
+            "text-classification",
+            model="MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli",
+            device=0 if torch.cuda.is_available() else -1,
+            top_k=None,
+            truncation=True,
+        )
+    except Exception:
+        return pipeline(
+            "text-classification",
+            model="microsoft/deberta-v3-base-mnli",
+            device=-1,
+            top_k=None,
+            truncation=True,
+        )
 
 
 def verify_response(answer: str, sources: List[Dict[str, Any]], relations: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -55,13 +78,11 @@ def verify_response(answer: str, sources: List[Dict[str, Any]], relations: List[
 
     # Optional NLI Semantic Entailment
     try:
-        from transformers import pipeline
-        import torch
         # Only load if we have sources and sentences
         if sources and answer_text:
             sentences = [s.strip() + "." for s in answer_text.split(".") if len(s.strip()) > 20]
             if sentences:
-                classifier = pipeline("zero-shot-classification", model="microsoft/deberta-v3-base-mnli", device=0 if torch.cuda.is_available() else -1)
+                classifier = _nli_classifier()
                 source_concat = " ".join([s.get("abstract", "") for s in sources])[:2000] # Trim for context window
                 # Check entailment for a subset of sentences to save time
                 for sent in sentences[:3]:

@@ -3,7 +3,7 @@ import json
 import pandas as pd
 from google import genai
 
-def generate_overseer_report(api_key: str, consensus_report: str, eln_logs_or_df, custom_instructions_or_dict="", model_name: str = "gemini-1.5-pro") -> str:
+def generate_overseer_report(api_key: str, consensus_report: str, eln_logs_or_df, custom_instructions_or_dict="", model_name: str = "gemini-2.5-flash") -> str:
     """
     Generates a comprehensive Overseer Report using Gemini, synthesizing local findings 
     with live web-grounded research (if grounding is supported/enabled).

@@ -1,7 +1,7 @@
 import os
 from google import genai
 
-def run_peer_review(api_key: str, synthesis_text: str, focus_area: str = "General logic and methodology", model_name: str = "gemini-1.5-pro") -> str:
+def run_peer_review(api_key: str, synthesis_text: str, focus_area: str = "General logic and methodology", model_name: str = "gemini-2.5-flash") -> str:
     """
     Runs a critical appraisal (Devil's Advocate) of the local findings/synthesis.
     """

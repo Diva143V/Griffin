@@ -1,7 +1,7 @@
 import os
 from google import genai
 
-def refine_report_section(api_key: str, original_text: str, instructions: str, model_name: str = "gemini-1.5-pro") -> str:
+def refine_report_section(api_key: str, original_text: str, instructions: str, model_name: str = "gemini-2.5-flash") -> str:
     """
     Allows iterative refinement of specific report sections based on natural language instructions.
     """

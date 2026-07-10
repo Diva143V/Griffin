@@ -2,7 +2,7 @@ import os
 import json
 from google import genai
 
-def run_qa_audit(api_key: str, report_text: str, model_name: str = "gemini-1.5-pro") -> dict:
+def run_qa_audit(api_key: str, report_text: str, model_name: str = "gemini-2.5-flash") -> dict:
     """
     Acts as a Hallucination QA Auditor to output a credibility score (0-100) 
     and highlight logical inconsistencies or untraceable citations.

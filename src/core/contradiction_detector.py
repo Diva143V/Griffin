@@ -29,9 +29,9 @@ from datetime import datetime, timezone
 import concurrent.futures
 from itertools import combinations
 from typing import Any, Dict, List, Optional, Tuple
+from ..shared.llm import chat as llm_chat
 
 import numpy as np
-import ollama
 import pandas as pd
 from sentence_transformers import SentenceTransformer
 
@@ -266,7 +266,7 @@ def analyse_pair(
 
     for attempt in range(1 + MAX_LLM_RETRIES):
         try:
-            response = ollama.chat(model=model, messages=messages, format="json")
+            response = llm_chat(model, messages=messages, format="json", task="classify")
             last_raw = response["message"]["content"]
             parsed = _safe_json_parse(last_raw)
 
@@ -461,9 +461,13 @@ def run_synthesis(
     print("  Generating synthesis report...")
 
     try:
-        response = ollama.chat(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
+        response = llm_chat(
+            model,
+            messages=[
+                {"role": "system", "content": "You are a clinical consensus analyst."},
+                {"role": "user", "content": prompt}
+            ],
+            task="synthesis"
         )
         synthesis = response["message"]["content"]
     except Exception as exc:

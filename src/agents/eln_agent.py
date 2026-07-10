@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import time
 import random
-from typing import Any, Dict
-import ollama
+from typing import Any, Dict, Optional
+from ..shared.llm import chat as llm_chat
 
 from ..shared.config import MODEL_ROUTING
 
@@ -56,14 +56,15 @@ Ensure the output is fully structured in clean markdown and behaves like a real 
 """
 
     try:
-        response = ollama.chat(
-            model=model_name,
+        response = llm_chat(
+            model_name,
             messages=[{"role": "user", "content": prompt}],
-            options=options
+            task="protocol",
+            options=options,
         )
         eln_text = response["message"]["content"]
     except Exception as e:
-        eln_text = f"Error calling ELN Agent: {e}"
+        eln_text = f"Error generating ELN entry: {e}"
 
     duration = time.time() - start_time
     

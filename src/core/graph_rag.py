@@ -5,12 +5,15 @@ import ast
 import json
 import os
 import time
+import logging
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
-import ollama
 import pandas as pd
 from sentence_transformers import SentenceTransformer
+from ..shared.llm import chat as llm_chat
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
 
@@ -240,13 +243,15 @@ def generate_answer(prompt: str, model: str) -> Tuple[str, float]:
     """Execute LLM generation and measure time taken."""
     start_time = time.time()
     try:
-        response = ollama.chat(
-            model=model,
-            messages=[{"role": "user", "content": prompt}]
+        response = llm_chat(
+            model,
+            messages=[{"role": "user", "content": prompt}],
+            task="synthesis",
         )
         ans = response["message"]["content"]
     except Exception as e:
-        ans = f"Error calling Ollama: {e}"
+        logger.error("Failed to generate answer: %s", e)
+        ans = f"Error generating answer: {e}"
     
     duration = time.time() - start_time
     return ans, duration

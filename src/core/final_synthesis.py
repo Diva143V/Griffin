@@ -13,7 +13,7 @@ import logging
 import os
 from typing import Dict, Any, List
 import pandas as pd
-import ollama
+from ..shared.llm import chat as llm_chat
 
 # Configure logging
 logging.basicConfig(
@@ -70,6 +70,7 @@ def run_synthesis(
     output_txt: str,
     output_md: str,
     model: str,
+    topic: str = "the provided research topic",
 ) -> None:
     logger.info("Loading inputs...")
     
@@ -116,7 +117,7 @@ def run_synthesis(
     contradiction_summary = load_contradictions_summary(contradictions_path)
 
     # 4. Construct the synthesis prompt
-    prompt = f"""You are an elite biomedical research analyst. Synthesize a clinical consensus report on the relationship between Metformin and Breast Cancer prognosis / incidence.
+    prompt = f"""You are an elite biomedical research analyst. Synthesize a clinical consensus report on: {topic}.
 
 Below is the aggregated scientific data collected:
 
@@ -142,9 +143,10 @@ Return the report in standard Markdown formatting. Do not include introductory c
 
     logger.info("Calling Ollama chat API using model '%s'...", model)
     try:
-        response = ollama.chat(
-            model=model,
-            messages=[{"role": "user", "content": prompt}]
+        response = llm_chat(
+            model,
+            messages=[{"role": "user", "content": prompt}],
+            task="synthesis",
         )
         final_answer = response["message"]["content"]
     except Exception as exc:
@@ -178,6 +180,7 @@ def main() -> None:
     parser.add_argument("--output-txt", default=DEFAULT_OUTPUT_TXT, help="Path for TXT output")
     parser.add_argument("--output-md", default=DEFAULT_OUTPUT_MD, help="Path for Markdown output")
     parser.add_argument("--model", default=DEFAULT_MODEL, help="Ollama model name")
+    parser.add_argument("--topic", default="the provided research topic", help="Research topic for the synthesis")
     args = parser.parse_args()
 
     run_synthesis(
@@ -187,6 +190,7 @@ def main() -> None:
         output_txt=args.output_txt,
         output_md=args.output_md,
         model=args.model,
+        topic=args.topic,
     )
 
 
