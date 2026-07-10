@@ -17,7 +17,7 @@ import chromadb
 from sentence_transformers import SentenceTransformer
 
 
-DEFAULT_MODEL = "all-MiniLM-L6-v2"
+DEFAULT_MODEL = "BAAI/bge-small-en-v1.5"
 DEFAULT_INPUT = "dataset/clean_papers_with_embeddings.csv"
 DEFAULT_DB_PATH = "dataset/chroma_db"
 COLLECTION_NAME = "papers"

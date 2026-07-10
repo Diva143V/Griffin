@@ -623,12 +623,26 @@ def execute_query_plan(
         result["synthesis_answer"] = "Synthesis report was not requested for this query by the Executor Router."
         result["verification"] = {"status": "skipped", "findings": []}
 
+    # Simple in-memory cache for Consensus Agent
+    if not hasattr(execute_query_plan, "_consensus_cache"):
+        execute_query_plan._consensus_cache = {}
+
     # 5. Run Consensus Agent - Dynamic Execution
     if "consensus_analyst" in executed_agents:
         if status_callback:
             status_callback("Analyzing scientific consensus and extracting agreements/contradictions...")
         consensus_start = time.time()
-        consensus_res = analyze_consensus(plan.query, result.get("sources", []), result.get("relations", []), model_name=resolved_routing["consensus_analyst"], options=llm_options)
+        
+        # Calculate cache key
+        import hashlib
+        cache_key = hashlib.md5(f"{plan.query}_{resolved_routing['consensus_analyst']}_{len(result.get('sources', []))}".encode()).hexdigest()
+        
+        if cache_key in execute_query_plan._consensus_cache:
+            consensus_res = execute_query_plan._consensus_cache[cache_key]
+        else:
+            consensus_res = analyze_consensus(plan.query, result.get("sources", []), result.get("relations", []), model_name=resolved_routing["consensus_analyst"], options=llm_options)
+            execute_query_plan._consensus_cache[cache_key] = consensus_res
+
         routing_stats["consensus_analyst"]["duration_sec"] = round(time.time() - consensus_start, 2)
         result["consensus"] = consensus_res
         try:

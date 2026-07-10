@@ -143,7 +143,7 @@ def run_contradiction_pipeline(chosen_extractor, chosen_detector, status_placeho
         output_json="dataset/contradictions.json",
         output_report="dataset/contradiction_report.md",
         model=chosen_detector,
-        embedding_model="all-MiniLM-L6-v2",
+        embedding_model="BAAI/bge-small-en-v1.5",
         evidence_file="dataset/ranked_papers.csv",
         max_pairs=20,
         similarity_threshold=0.45,
@@ -449,7 +449,7 @@ def pick_claim_text(row):
 
 @st.cache_resource
 def load_encoder_model():
-    return SentenceTransformer("all-MiniLM-L6-v2")
+    return SentenceTransformer("BAAI/bge-small-en-v1.5")
 
 def format_reasoning_text(text: str, mode: str) -> str:
     """Format and separate reasoning (<think>...</think>) block from main text."""

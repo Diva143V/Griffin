@@ -40,7 +40,7 @@ from sentence_transformers import SentenceTransformer
 # ---------------------------------------------------------------------------
 
 DEFAULT_MODEL = "qwen3.5:9b"
-DEFAULT_EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+DEFAULT_EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
 DEFAULT_INPUT = "dataset/claims.csv"
 DEFAULT_EVIDENCE_FILE = "dataset/ranked_papers.csv"
 DEFAULT_OUTPUT_TEXT = "dataset/contradictions.txt"
@@ -266,7 +266,7 @@ def analyse_pair(
 
     for attempt in range(1 + MAX_LLM_RETRIES):
         try:
-            response = ollama.chat(model=model, messages=messages)
+            response = ollama.chat(model=model, messages=messages, format="json")
             last_raw = response["message"]["content"]
             parsed = _safe_json_parse(last_raw)
 

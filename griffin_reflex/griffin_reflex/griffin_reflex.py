@@ -49,7 +49,7 @@ def _benchmark_sync(question, model_choice):
     from src.core import graph_rag
     from sentence_transformers import SentenceTransformer
     ranked_df, contradictions = graph_rag.load_data()
-    enc=SentenceTransformer('all-MiniLM-L6-v2')
+    enc=SentenceTransformer('BAAI/bge-small-en-v1.5')
     
     t=time.time()
     std_ctx, std_src = graph_rag.get_standard_rag_context(question, enc, ranked_df, 3)
@@ -133,7 +133,7 @@ def _run_contradiction_pipeline_sync(extractor, detector):
         output_json=os.path.join(DATASET_DIR, "contradictions.json"),
         output_report=os.path.join(DATASET_DIR, "contradiction_report.md"),
         model=detector,
-        embedding_model="all-MiniLM-L6-v2",
+        embedding_model="BAAI/bge-small-en-v1.5",
         evidence_file=os.path.join(DATASET_DIR, "ranked_papers.csv"),
         max_pairs=20,
         similarity_threshold=0.45,
@@ -143,7 +143,7 @@ def _run_contradiction_pipeline_sync(extractor, detector):
 
 def _rag_chat_sync(user_input):
     from sentence_transformers import SentenceTransformer
-    encoder_model = SentenceTransformer("all-MiniLM-L6-v2")
+    encoder_model = SentenceTransformer("BAAI/bge-small-en-v1.5")
     query_emb = encoder_model.encode([user_input], normalize_embeddings=True)[0]
     
     retrieved_sources = []

@@ -12,7 +12,7 @@ import ollama
 import pandas as pd
 from sentence_transformers import SentenceTransformer
 
-DEFAULT_EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+DEFAULT_EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
 
 
 def parse_embedding(value: Any) -> np.ndarray:

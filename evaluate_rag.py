@@ -54,7 +54,7 @@ def run_benchmark(model: str, top_k: int = 3) -> Dict[str, Any]:
     
     # Load model
     print("Loading SentenceTransformer model...")
-    encoder = SentenceTransformer("all-MiniLM-L6-v2")
+    encoder = SentenceTransformer("BAAI/bge-small-en-v1.5")
     
     results = []
     

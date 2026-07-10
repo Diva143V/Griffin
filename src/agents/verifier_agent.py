@@ -53,6 +53,25 @@ def verify_response(answer: str, sources: List[Dict[str, Any]], relations: List[
     if relations and not any(kw in answer_text.lower() for kw in ["contradict", "conflict", "agree", "differ", "disagree", "versus", "vs"]):
         findings.append("Disagreement relations exist in the database, but the answer does not mention any conflict or debate.")
 
+    # Optional NLI Semantic Entailment
+    try:
+        from transformers import pipeline
+        import torch
+        # Only load if we have sources and sentences
+        if sources and answer_text:
+            sentences = [s.strip() + "." for s in answer_text.split(".") if len(s.strip()) > 20]
+            if sentences:
+                classifier = pipeline("zero-shot-classification", model="microsoft/deberta-v3-base-mnli", device=0 if torch.cuda.is_available() else -1)
+                source_concat = " ".join([s.get("abstract", "") for s in sources])[:2000] # Trim for context window
+                # Check entailment for a subset of sentences to save time
+                for sent in sentences[:3]:
+                    result = classifier(sent, candidate_labels=["entailment", "contradiction", "neutral"], hypothesis_template="This text implies that {}")
+                    if result["labels"][0] == "contradiction":
+                        findings.append(f"Possible hallucination/contradiction detected: '{sent}'")
+    except ImportError:
+        pass
+
     # Pass if no flags/warnings were raised
-    status = "pass" if not findings else "review"
-    return {"status": status, "findings": findings}
+    if not findings:
+        return {"status": "pass", "findings": []}
+    return {"status": "review", "findings": findings}

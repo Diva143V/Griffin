@@ -61,7 +61,7 @@ if __name__ == "__main__":
         claims_df = pd.DataFrame()
         contradictions = {}
         
-        encoder_model = SentenceTransformer('all-MiniLM-L6-v2')
+        encoder_model = SentenceTransformer('BAAI/bge-small-en-v1.5')
         
         # Pass Semantic Scholar API key via environment if provided
         if sc_api_key:

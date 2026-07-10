@@ -21,7 +21,7 @@ from sentence_transformers import SentenceTransformer
 import chromadb
 
 
-DEFAULT_MODEL = "all-MiniLM-L6-v2"
+DEFAULT_MODEL = "BAAI/bge-small-en-v1.5"
 DEFAULT_DB_PATH = "dataset/chroma_db"
 DEFAULT_COLLECTION = "papers"
 

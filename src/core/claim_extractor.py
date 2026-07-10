@@ -14,14 +14,19 @@ import os
 import re
 from typing import Dict, List, Optional
 
-import ollama
 import pandas as pd
+from pydantic import BaseModel, ValidationError
 
 
 DEFAULT_MODEL = "llama3.1:8b"
 DEFAULT_INPUT = "dataset/clean_papers.csv"
 DEFAULT_OUTPUT = "dataset/claims.csv"
 ALLOWED_STANCES = {"support", "contradict", "neutral"}
+
+class ClaimOutput(BaseModel):
+    claim: str
+    stance: str
+    reason: str
 
 
 def build_prompt(title: str, abstract: str) -> str:
@@ -49,22 +54,21 @@ Abstract:
 
 
 def parse_output(output: str) -> Dict[str, str]:
-    """Best-effort parse of the model response into structured fields."""
-    import json
+    """Best-effort parse of the model response into structured fields using Pydantic."""
     claim = ""
     stance = ""
     reason = ""
 
     try:
-        data = json.loads(output)
-        claim = data.get("claim", "")
-        raw_stance = data.get("stance", "")
-        reason = data.get("reason", "")
+        data = ClaimOutput.model_validate_json(output)
+        claim = data.claim
+        raw_stance = data.stance
+        reason = data.reason
         
         normalized = raw_stance.lower().strip()
         stance = normalized if normalized in ALLOWED_STANCES else raw_stance
         return {"claim": claim, "stance": stance, "reason": reason}
-    except Exception:
+    except (ValidationError, ValueError):
         pass
 
     # Fallback to regex if JSON parsing fails
@@ -152,7 +156,7 @@ def extract_claims(
             response = ollama.chat(
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
-                format="json"
+                format=ClaimOutput.model_json_schema()
             )
             output = response["message"]["content"]
             parsed = parse_output(output)
