@@ -13,7 +13,7 @@ import argparse
 import hashlib
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Any
 
 import pandas as pd
@@ -142,7 +142,7 @@ def main() -> None:
 
     df["embedding"] = embeddings
     df["embedding_model"] = args.model
-    df["embedding_created_at"] = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+    df["embedding_created_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
     df.to_csv(args.output, index=False)
     print(f"Embeddings generated with model '{args.model}'")

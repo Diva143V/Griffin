@@ -41,8 +41,11 @@ def _overseer_sync(api_key, report, custom_inst, gemini_model):
         try: extra+=pd.read_csv(rp).head(10).to_string()
         except Exception: pass
     if os.path.exists(cp):
-        try: extra+=json.dumps(json.load(open(cp)), indent=2)[:4000]
-        except Exception: pass
+        try:
+            with open(cp, "r") as f:
+                extra += json.dumps(json.load(f), indent=2)[:4000]
+        except Exception:
+            pass
     return generate_overseer_report(api_key, report, extra, custom_inst, gemini_model)
 
 def _qa_sync(api_key, report, gemini_model):
@@ -65,11 +68,11 @@ def _benchmark_sync(question, model_choice):
     enc=SentenceTransformer('BAAI/bge-small-en-v1.5')
     
     t=time.time()
-    std_ctx, std_src = graph_rag.get_standard_rag_context(question, enc, ranked_df, 3)
+    std_ctx, std_src = graph_rag.get_standard_rag_context(question, enc, ranked_df, max_papers=3)
     std_rt=time.time()-t
     std_ans, std_gen = graph_rag.generate_answer(f"Answer using: {std_ctx}\nQ:{question}", model_choice)
     t2=time.time()
-    graph_ctx, graph_src, graph_rel = graph_rag.get_graph_rag_context(question, enc, ranked_df, contradictions, 3)
+    graph_ctx, graph_src, graph_rel = graph_rag.get_graph_rag_context(question, enc, ranked_df, contradictions, max_papers=3)
     graph_rt=time.time()-t2
     graph_ans, graph_gen = graph_rag.generate_answer(f"Answer using: {graph_ctx}\nQ:{question}", model_choice)
     return {
@@ -80,7 +83,8 @@ def _benchmark_sync(question, model_choice):
 def _graph_sync():
     con_path=os.path.join(DATASET_DIR,"contradictions.json")
     if not os.path.exists(con_path): return None
-    data=json.load(open(con_path))
+    with open(con_path, "r") as f:
+        data = json.load(f)
     G=nx.Graph()
     def add(items,color):
         for it in items[:50]:
@@ -254,6 +258,7 @@ class State(rx.State):
     use_manual_agents: bool = False
     
     extracted_intent: str = ""
+    extracted_routed_agents_str: str = ""
     is_extracting_intent: bool = False
     
     sel_claim_extractor: bool = True
@@ -263,6 +268,12 @@ class State(rx.State):
     sel_contradiction: bool = True
     sel_eln: bool = True
     sel_synthesis: bool = True
+    
+    sel_primer: bool = False
+    sel_glossary: bool = False
+    sel_methodology: bool = False
+    sel_clinical: bool = False
+    sel_bias: bool = False
     
     # Stored as strings so controlled number inputs stay in sync with UI
     collector_limits: dict[str, str] = {
@@ -284,13 +295,19 @@ class State(rx.State):
     partial_agreements_data: list[list[str]] = []
     is_contradiction_running: bool = False
     
+    primer_report: str = "Primer not loaded. Click 'Load Aux Reports'."
+    glossary_report: str = "Glossary not loaded."
+    methodology_report: str = "Methodology report not loaded."
+    clinical_report: str = "Clinical translation not loaded."
+    bias_report: str = "Bias report not loaded."
+    
     overseer_report: str = "Click 'Generate Report' to run the Grounded Overseer."
     overseer_custom_inst: str = ""
     is_overseer_running: bool = False
     
     # Phase 5/6 State
     ranked_papers_data: list[dict[str, str]] = []
-    min_evidence_score: int = 1
+    min_evidence_score: list[int] = [1]
     paper_search_query: str = ""
     
     claims_data: list[list[str]] = []
@@ -330,7 +347,7 @@ class State(rx.State):
     pipeline_trace_visible: bool = False
     verification_status: str = ""
     verification_trace: list[dict[str, Any]] = []
-    routing_stats: list[dict[str, Any]] = []
+    routing_stats: list[dict[str, str]] = []
     fallback_warnings: list[str] = []
     consensus_report: str = ""
     experiment_protocol: str = ""
@@ -482,12 +499,31 @@ class State(rx.State):
     @rx.event
     def set_sel_synthesis(self, val: bool): self.sel_synthesis = val
     @rx.event
-    def set_refinement_instruction(self, val: str): self.refinement_instruction = val
+    def set_sel_primer(self, val: bool): self.sel_primer = val
+    @rx.event
+    def set_sel_glossary(self, val: bool): self.sel_glossary = val
+    @rx.event
+    def set_sel_methodology(self, val: bool): self.sel_methodology = val
+    @rx.event
+    def set_sel_clinical(self, val: bool): self.sel_clinical = val
+    @rx.event
+    def set_sel_bias(self, val: bool): self.sel_bias = val
+    @rx.event
+    def set_refinement_instruction(self, val: str):
+        val_clean = val.strip().lower()
+        if val_clean in ["yes", "no", "yeah", "yep", "correct", "looks good", "ok", "okay"]:
+            self.refinement_instruction = ""
+        else:
+            self.refinement_instruction = val
     @rx.event
     def close_confirm_dialog(self): self.show_confirm_dialog = False
 
     @rx.event
-    def set_min_evidence_score(self, val: list[int]): self.min_evidence_score = val[0]
+    def set_min_evidence_score(self, val: list[float] | list[int]): 
+        try:
+            self.min_evidence_score = [int(val[0])]
+        except (IndexError, ValueError, TypeError):
+            pass
     @rx.event
     def set_paper_search_query(self, val: str): self.paper_search_query = val
     @rx.event
@@ -512,8 +548,9 @@ class State(rx.State):
         out=[]
         for row in self.ranked_papers_data:
             try:
-                if float(row["score"]) < float(self.min_evidence_score): continue
-            except Exception: pass
+                if float(row["score"]) < float(self.min_evidence_score[0]): continue
+            except Exception:
+                if float(self.min_evidence_score[0]) > 1.0: continue
             
             if self.paper_search_query:
                 query = self.paper_search_query.lower()
@@ -625,6 +662,13 @@ class State(rx.State):
         intent = await loop.run_in_executor(None, clean_search_query, self.query, model)
         self.extracted_intent = intent
         
+        if not self.use_manual_agents:
+            from src.agents.query_planner import route_executor
+            routed = await loop.run_in_executor(None, route_executor, self.query, model)
+            self.extracted_routed_agents_str = ", ".join(routed) if routed else "None"
+        else:
+            self.extracted_routed_agents_str = ""
+        
         self.is_extracting_intent = False
         self.show_confirm_dialog = True
         yield
@@ -634,6 +678,33 @@ class State(rx.State):
         self.is_running = True
         self.pipeline_trace_visible = False
         self.logs = [f"Starting Query Planner for: {self.query}"]
+        
+        # Clear UI state
+        self.contradictions_data = []
+        self.ranked_papers_data = []
+        self.claims_data = []
+        self.synthesis_report = ""
+        self.consensus_report = ""
+        self.experiment_protocol = ""
+        self.eln_entry = ""
+        self.primer_report = "Primer not loaded. Click 'Load Aux Reports'."
+        self.glossary_report = "Glossary not loaded."
+        self.methodology_report = "Methodology report not loaded."
+        self.clinical_report = "Clinical translation not loaded."
+        self.bias_report = "Bias report not loaded."
+        
+        self.fetched_sources = []
+        self.matched_claims = []
+        self.verification_trace = []
+        
+        # Wipe out old downstream outputs in dataset folder to prevent stale data
+        old_files = ["contradictions.json", "contradictions.csv", "contradiction_report.md", "claims.csv", "synthesis.md", "consensus.md", "experiment_protocol.md", "eln_entry.md", "execution_trace.json", "ranked_papers.csv", "primer_report.md", "glossary_report.md", "methodology_report.md", "clinical_report.md", "bias_report.md"]
+        for f in old_files:
+            fp = os.path.join(DATASET_DIR, f)
+            if os.path.exists(fp):
+                try: os.remove(fp)
+                except Exception: pass
+                
         yield
         loop = asyncio.get_running_loop()
         task = loop.run_in_executor(None, self.execute_backend_pipeline)
@@ -643,7 +714,7 @@ class State(rx.State):
             if os.path.exists(log_file_path):
                 if os.path.getsize(log_file_path) < last_pos:
                     last_pos = 0
-                with open(log_file_path, "r", encoding="utf-8") as f:
+                with open(log_file_path, "r", encoding="utf-8", errors="replace") as f:
                     f.seek(last_pos)
                     new_lines = f.readlines()
                     last_pos = f.tell()
@@ -734,6 +805,7 @@ class State(rx.State):
                 # Render <think> tags correctly for consensus report
                 self.consensus_report = format_reasoning_text(self.consensus_report, self.llm_reasoning_mode)
 
+                self.load_auxiliary_reports()
                 self.pipeline_trace_visible = True
             except Exception as e:
                 self.logs.append(f"Failed to load execution trace: {e}")
@@ -770,6 +842,16 @@ class State(rx.State):
                 fa.append("eln_assistant")
             if self.sel_synthesis:
                 fa.append("synthesis")
+            if self.sel_primer:
+                fa.append("primer")
+            if self.sel_glossary:
+                fa.append("glossary")
+            if self.sel_methodology:
+                fa.append("methodology")
+            if self.sel_clinical:
+                fa.append("clinical")
+            if self.sel_bias:
+                fa.append("bias")
             forced_agents = ",".join(fa)
 
         env = os.environ.copy()
@@ -814,6 +896,21 @@ class State(rx.State):
         else:
             self.synthesis_report = "Report not found. Did you run the pipeline yet?"
             
+    def load_auxiliary_reports(self):
+        for attr, fname in [
+            ("primer_report", "primer_report.md"),
+            ("glossary_report", "glossary_report.md"),
+            ("methodology_report", "methodology_report.md"),
+            ("clinical_report", "clinical_report.md"),
+            ("bias_report", "bias_report.md")
+        ]:
+            path = os.path.join(DATASET_DIR, fname)
+            if os.path.exists(path):
+                with open(path, "r", encoding="utf-8") as f:
+                    setattr(self, attr, f.read())
+            else:
+                setattr(self, attr, f"Report '{fname}' not found. Did you enable this agent?")
+                
     async def run_synthesis_agent(self):
         self.is_synthesis_running=True; yield
         loop=asyncio.get_running_loop()
@@ -1335,7 +1432,21 @@ def tab0_content():
                         rx.checkbox("ELN Assistant", checked=State.sel_eln, on_change=State.set_sel_eln),
                         spacing="2",
                     ),
-                    rx.vstack(rx.checkbox("Synthesis", checked=State.sel_synthesis, on_change=State.set_sel_synthesis), spacing="2"),
+                    rx.vstack(
+                        rx.checkbox("Synthesis", checked=State.sel_synthesis, on_change=State.set_sel_synthesis), 
+                        rx.checkbox("Primer", checked=State.sel_primer, on_change=State.set_sel_primer),
+                        spacing="2"
+                    ),
+                    rx.vstack(
+                        rx.checkbox("Glossary", checked=State.sel_glossary, on_change=State.set_sel_glossary),
+                        rx.checkbox("Methodology", checked=State.sel_methodology, on_change=State.set_sel_methodology),
+                        spacing="2"
+                    ),
+                    rx.vstack(
+                        rx.checkbox("Clinical Readiness", checked=State.sel_clinical, on_change=State.set_sel_clinical),
+                        rx.checkbox("Bias Detector", checked=State.sel_bias, on_change=State.set_sel_bias),
+                        spacing="2"
+                    ),
                     spacing="6",
                     wrap="wrap",
                 ),
@@ -1353,9 +1464,18 @@ def tab0_content():
                     rx.vstack(
                         rx.text("Extracted Search Intent:", size="2", weight="bold"),
                         rx.text(State.extracted_intent, size="3", color="var(--indigo-11)", style={"background": "var(--indigo-3)", "padding": "0.5rem", "borderRadius": "8px", "fontFamily": _FONT_MONO, "width": "100%"}),
-                        rx.text("Does this match what you intended to search? You can refine the query below:", size="2", margin_top="2"),
+                        rx.cond(
+                            ~State.use_manual_agents,
+                            rx.vstack(
+                                rx.text("Executor LLM Routing Plan:", size="2", weight="bold"),
+                                rx.text(State.extracted_routed_agents_str, size="3", color="var(--teal-11)", style={"background": "var(--teal-3)", "padding": "0.5rem", "borderRadius": "8px", "fontFamily": _FONT_MONO, "width": "100%"}),
+                                width="100%",
+                                spacing="1"
+                            )
+                        ),
+                        rx.text("If you need to adjust the search intent, provide refinement instructions below:", size="2", margin_top="2"),
                         rx.input(
-                            placeholder="Refinement (e.g. focus on clinical evidence)",
+                            placeholder="Refinement (e.g. 'focus only on clinical evidence', 'add type 2 diabetes')",
                             value=State.refinement_instruction,
                             on_change=State.set_refinement_instruction,
                             **_input_style,
@@ -1412,6 +1532,15 @@ def tab0_content():
         rx.cond(
             State.pipeline_trace_visible,
             rx.vstack(
+                rx.cond(
+                    State.primer_report != "Primer not loaded. Click 'Load Aux Reports'.",
+                    rx.vstack(
+                        rx.heading("Layperson Primer", size="5", style={"fontFamily": _FONT_DISPLAY}),
+                        rx.card(rx.markdown(State.primer_report), **_card_style),
+                        margin_bottom="4",
+                        width="100%",
+                    )
+                ),
                 rx.heading("Routed Answer (Citation Verified)", size="5", style={"fontFamily": _FONT_DISPLAY}),
                 rx.card(rx.markdown(State.consensus_report), **_card_style),
                 rx.heading("Verification Status", size="5", style={"fontFamily": _FONT_DISPLAY}),
@@ -1646,8 +1775,8 @@ def tab4_content():
         rx.button("Load Ranked Evidence", on_click=State.load_ranked_evidence, **_btn_primary, margin_bottom="3"),
         rx.hstack(
             rx.text("Filter by Evidence Score (Oxford Level):", size="2", color="var(--gray-11)"),
-            rx.slider(default_value=[1], min=1, max=10, on_change=State.set_min_evidence_score, width="300px"),
-            rx.badge(State.min_evidence_score, size="2", color_scheme="indigo", variant="soft", radius="full"),
+            rx.slider(value=State.min_evidence_score, min=1, max=10, on_change=State.set_min_evidence_score, width="300px"),
+            rx.badge(State.min_evidence_score[0], size="2", color_scheme="indigo", variant="soft", radius="full"),
             align_items="center",
             spacing="4",
             margin_bottom="4",
@@ -1913,6 +2042,34 @@ def tab6_content():
     )
 
 
+def tab7_content():
+    return rx.box(
+        rx.hstack(
+            rx.heading("🛠️ Auxiliary Reports", size="6", style={"fontFamily": _FONT_DISPLAY}),
+            rx.spacer(),
+            rx.button("Load Aux Reports", on_click=State.load_auxiliary_reports, **_btn_primary),
+            width="100%",
+            margin_bottom="4",
+        ),
+        rx.tabs.root(
+            rx.tabs.list(
+                rx.tabs.trigger("Primer (Beginner)", value="aux1"),
+                rx.tabs.trigger("Glossary", value="aux2"),
+                rx.tabs.trigger("Methodology Critic", value="aux3"),
+                rx.tabs.trigger("Clinical Readiness", value="aux4"),
+                rx.tabs.trigger("Bias Detector", value="aux5"),
+            ),
+            rx.tabs.content(rx.card(rx.markdown(State.primer_report), **_card_style), value="aux1"),
+            rx.tabs.content(rx.card(rx.markdown(State.glossary_report), **_card_style), value="aux2"),
+            rx.tabs.content(rx.card(rx.markdown(State.methodology_report), **_card_style), value="aux3"),
+            rx.tabs.content(rx.card(rx.markdown(State.clinical_report), **_card_style), value="aux4"),
+            rx.tabs.content(rx.card(rx.markdown(State.bias_report), **_card_style), value="aux5"),
+            default_value="aux1",
+            width="100%",
+        ),
+        padding="4",
+    )
+
 def main_content():
     return rx.box(
         rx.vstack(
@@ -1950,6 +2107,7 @@ def main_content():
                     rx.tabs.trigger("🤖 Benchmark", value="eval", **_tab_trigger),
                     rx.tabs.trigger("🧐 Overseer", value="tab6", **_tab_trigger),
                     rx.tabs.trigger("🕸️ GraphRAG", value="tab3", **_tab_trigger),
+                    rx.tabs.trigger("🛠️ Auxiliary", value="tab7", **_tab_trigger),
                     wrap="wrap",
                     style={
                         "gap": "8px",
@@ -1969,6 +2127,7 @@ def main_content():
                 rx.tabs.content(tab5_content(), value="tab5"),
                 rx.tabs.content(tab_eval_content(), value="eval"),
                 rx.tabs.content(tab6_content(), value="tab6"),
+                rx.tabs.content(tab7_content(), value="tab7"),
                 default_value="tab0",
                 width="100%",
             ),

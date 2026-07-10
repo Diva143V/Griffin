@@ -34,6 +34,7 @@ def paper_card(p):
 
 def paper_explorer():
     """Main State paper explorer (ranked papers + search)."""
+    # pyrefly: ignore [missing-import]
     from griffin_reflex.griffin_reflex import State
 
     return rx.vstack(

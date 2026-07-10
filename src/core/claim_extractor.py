@@ -107,12 +107,10 @@ def load_existing_titles(path: str) -> set:
     return set(existing["title"].astype(str).str.strip().str.lower().tolist())
 
 
-def _process_one_row(row, model, prompt_builder, resume, existing_titles):
+def _process_one_row(row, model, prompt_builder):
     title = str(row["title"]).strip()
     abstract = str(row["abstract"]).strip()
     if not abstract:
-        return None, None
-    if resume and title.lower() in existing_titles:
         return None, None
     prompt = prompt_builder(title, abstract)
     try:
@@ -161,12 +159,20 @@ def extract_claims(
             rows = []
 
     processed_count = 0
-    to_process = [r for _, r in df.iterrows()]
+    to_process = []
+    seen_in_batch = set(existing_titles) if resume else set()
+    for _, r in df.iterrows():
+        t = str(r.get("title", "")).strip().lower()
+        if resume and t in seen_in_batch:
+            continue
+        seen_in_batch.add(t)
+        to_process.append(r)
+
     if limit is not None:
         to_process = to_process[:limit]
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=6) as ex:
-        futures = [ex.submit(_process_one_row, r, model, build_prompt, resume, existing_titles)
+        futures = [ex.submit(_process_one_row, r, model, build_prompt)
                    for r in to_process]
         for fut in concurrent.futures.as_completed(futures):
             result = fut.result()

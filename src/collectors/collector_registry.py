@@ -40,7 +40,8 @@ DEFAULT_COLLECTORS: Dict[str, CollectorSpec] = {
         runner=lambda query, args: collect_pubmed(
             query,
             email=args.email,
-            batch_size=args.pubmed_batch_size,
+            limit=getattr(args, "pubmed_limit", getattr(args, "max_results", 100)),
+            batch_size=getattr(args, "pubmed_batch_size", 100),
             rate_limit_sec=args.pubmed_rate_limit,
         ),
     ),
@@ -51,7 +52,8 @@ DEFAULT_COLLECTORS: Dict[str, CollectorSpec] = {
         description="Europe PMC collector",
         runner=lambda query, args: collect_pmc(
             query,
-            page_size=args.pmc_page_size,
+            limit=getattr(args, "pmc_limit", getattr(args, "max_results", 100)),
+            page_size=getattr(args, "pmc_page_size", 100),
             max_pages=args.pmc_max_pages,
             rate_limit_sec=args.pmc_rate_limit,
         ),

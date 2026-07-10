@@ -27,7 +27,7 @@ def collect(query: str, page_size: int = 50, max_pages: int = 3, rate_limit_sec:
     trials = []
     page_token = None
     
-    print(f"Prominent Notification: Please check the terms of use at https://clinicaltrials.gov/ before using this data.")
+    print("Prominent Notification: Please check the terms of use at https://clinicaltrials.gov/ before using this data.")
 
     for page in range(1, max_pages + 1):
         try:

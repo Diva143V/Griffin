@@ -64,7 +64,7 @@ def run_benchmark(model: str, top_k: int = 3) -> Dict[str, Any]:
         # --- Standard RAG ---
         print("  Running Standard RAG...")
         t_ret_start = time.time()
-        std_context, std_sources = get_standard_rag_context(query, encoder, ranked_df, top_k)
+        std_context, std_sources = get_standard_rag_context(query, encoder, ranked_df, max_papers=top_k)
         std_ret_time = time.time() - t_ret_start
         
         std_prompt = STANDARD_PROMPT_TEMPLATE.format(query=query, context=std_context)
@@ -77,7 +77,7 @@ def run_benchmark(model: str, top_k: int = 3) -> Dict[str, Any]:
         print("  Running Graph RAG...")
         t_ret_start = time.time()
         graph_context, graph_sources, graph_relations = get_graph_rag_context(
-            query, encoder, ranked_df, contradictions, top_k
+            query, encoder, ranked_df, contradictions, max_papers=top_k
         )
         graph_ret_time = time.time() - t_ret_start
         

@@ -11,7 +11,7 @@ from Bio import Medline
 import pandas as pd
 
 
-def collect(query: str, email: str, batch_size: int = 100, rate_limit_sec: float = 0.5) -> pd.DataFrame:
+def collect(query: str, email: str = "example@example.com", limit: int = 100, batch_size: int = 100, rate_limit_sec: float = 0.5) -> pd.DataFrame:
     Entrez.email = email
     papers: List[dict] = []
 
@@ -40,11 +40,11 @@ def collect(query: str, email: str, batch_size: int = 100, rate_limit_sec: float
                     "source": "PubMed",
                 })
                 
-                # Stop if we hit the batch size (which we use as the hard limit)
-                if len(papers) >= batch_size:
+                # Stop if we hit the overall limit
+                if len(papers) >= limit:
                     break
             
-            if len(papers) >= batch_size:
+            if len(papers) >= limit:
                 break
 
             time.sleep(rate_limit_sec)

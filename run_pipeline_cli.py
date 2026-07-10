@@ -60,6 +60,9 @@ if __name__ == "__main__":
             f"collector_limits={collector_limits}\n"
         )
 
+    # Disable ChromaDB telemetry to suppress capture() warnings
+    os.environ["ANONYMIZED_TELEMETRY"] = "False"
+    
     try:
         # Read model routing from environment (set by Reflex UI) or use defaults
         default_routing = {
@@ -69,6 +72,11 @@ if __name__ == "__main__":
             "consensus_analyst": "koesn/llama3-openbiollm-8b:latest",
             "synthesis": "llama3.1:8b",
             "experiment_planner": "llama3.1:8b",
+            "primer": "llama3.1:8b",
+            "glossary": "llama3.1:8b",
+            "methodology": "llama3.1:8b",
+            "clinical": "llama3.1:8b",
+            "bias": "llama3.1:8b",
         }
 
         env_routing = os.environ.get("GRIFFIN_ROUTING", "")
@@ -119,6 +127,7 @@ if __name__ == "__main__":
             collector_limits=collector_limits,
             model_routing=model_routing,
             llm_options=llm_options,
+            status_callback=lambda msg: print(msg, flush=True),
         )
 
         # Persist full execution trace for the Reflex UI

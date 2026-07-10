@@ -20,7 +20,11 @@ def collect(query: str, limit: int = 100, offset: int = 0, max_pages: int | None
     - `max_pages` optionally limits the number of pages to fetch.
     - `delay` is seconds to wait between pages (in addition to client's internal pacing).
     """
-    client = SemanticScholarClient()
+    try:
+        client = SemanticScholarClient()
+    except RuntimeError as e:
+        print(f"Skipping Semantic Scholar collector: {e}")
+        return pd.DataFrame()
     papers: List[dict] = []
     page_count = 0
 

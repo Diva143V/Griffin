@@ -732,7 +732,7 @@ def run_detector(
     print(f"  * Results: {counts}")
 
     # -- Stage 3: Evidence weighting -------------------------------------
-    print(f"\n[Stage 3] Evidence-weighted scoring...")
+    print("\n[Stage 3] Evidence-weighted scoring...")
     evidence_scores = load_evidence_scores(evidence_file)
     if evidence_scores:
         apply_evidence_weights(results, evidence_scores)
@@ -741,12 +741,12 @@ def run_detector(
         print("  ! No evidence scores available - using default weights")
 
     # -- Stage 4: Synthesis ----------------------------------------------
-    print(f"\n[Stage 4] Generating synthesis...")
+    print("\n[Stage 4] Generating synthesis...")
     synthesis, confidence = run_synthesis(results, model)
     print(f"  * Synthesis complete (confidence: {confidence})")
 
     # -- Stage 5: Report generation --------------------------------------
-    print(f"\n[Stage 5] Generating reports...")
+    print("\n[Stage 5] Generating reports...")
     report = build_report(results, synthesis, confidence, model, embedding_model, input_path, total_claims)
 
     save_json(report, output_json)

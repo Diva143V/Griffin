@@ -43,19 +43,21 @@ def run_collectors(query: str, args) -> None:
         print(f"Running {spec.name} collector...")
         custom_limit = limits.get(spec.name, args.max_results)
         
+        import copy
+        runner_args = copy.copy(args)
         # Override values dynamically
         if spec.name == "PubMed":
-            args.pubmed_batch_size = custom_limit
+            runner_args.pubmed_limit = custom_limit
         elif spec.name == "PMC":
-            args.pmc_page_size = custom_limit
+            runner_args.pmc_limit = custom_limit
         elif spec.name == "SemanticScholar":
-            args.ss_limit = custom_limit
+            runner_args.ss_limit = custom_limit
         elif spec.name == "OpenAlex":
-            args.openalex_per_page = custom_limit
+            runner_args.openalex_limit = custom_limit
         else:
-            setattr(args, f"{spec.name.lower()}_limit", custom_limit)
+            setattr(runner_args, f"{spec.name.lower()}_limit", custom_limit)
 
-        df = spec.runner(query, args)
+        df = spec.runner(query, runner_args)
         df.to_csv(spec.output_path, index=False)
         print(f"Saved {spec.output_path} with {len(df)} records")
 

@@ -27,6 +27,11 @@ from .verifier_agent import verify_response
 from .consensus_agent import analyze_consensus
 from .experiment_agent import design_protocol
 from .eln_agent import format_eln_entry
+from .primer_agent import generate_primer
+from .glossary_agent import generate_glossary
+from .methodology_agent import analyze_methodology
+from .clinical_translation_agent import analyze_clinical_translation
+from .bias_agent import detect_bias
 from typing import Any, Dict, List, Optional, Tuple
 
 def get_valid_model(requested_model: str, fallback_priority: List[str] = None) -> Tuple[str, List[str]]:
@@ -108,7 +113,7 @@ def check_and_trigger_retrieval(query: str, encoder_model: Any, top_k: int) -> T
         return False, "No results returned."
         
     closest_distance = float(results["distances"][0][0])
-    # A distance of 0.25 or less indicates an exact semantic match
+    # A distance of 0.25 or less indicates high semantic similarity (cosine similarity >= 0.75)
     if closest_distance <= 0.25:
         return True, f"Found relevant papers in Chroma DB (closest distance: {closest_distance:.3f}). Bypassing retrieval."
         
@@ -275,6 +280,11 @@ Available Agents:
 4. "synthesis": Combine findings from all papers and write a final scientific draft/report.
 5. "experiment_planner": Design a step-by-step laboratory protocol with positive/negative controls.
 6. "eln_assistant": Format a formal Electronic Lab Notebook (ELN) entry to record experiment metadata and logs.
+7. "primer": Generate a simple layperson explanation of the scientific topic.
+8. "glossary": Extract and define key domain-specific acronyms and terms.
+9. "methodology": Provide a deep critique of the methodological flaws and biases across studies.
+10. "clinical": Translate the findings into a clinical readiness report for medical practitioners.
+11. "bias": Analyze funding sources and conflicts of interest for institutional bias.
 
 User Request: {query}
 
@@ -346,7 +356,12 @@ def execute_query_plan(
         "contradiction_detector": ["gemma4:e4b", "qwen3.5:9b", "llama3.1:8b", "gemma3:4b", "gemma3:1b", "llama3.1:latest"],
         "consensus_analyst": ["gemma4:e4b", "koesn/llama3-openbiollm-8b:latest", "llama3.1:8b", "qwen3.5:9b", "gemma3:4b", "gemma3:1b"],
         "synthesis": ["gemma4:e4b", "llama3.1:8b", "gemma3:4b", "gemma3:1b", "qwen3.5:9b", "llama3.1:latest"],
-        "experiment_planner": ["gemma4:e4b", "llama3.1:8b", "gemma3:4b", "gemma3:1b", "qwen3.5:9b", "llama3.1:latest"]
+        "experiment_planner": ["gemma4:e4b", "llama3.1:8b", "gemma3:4b", "gemma3:1b", "qwen3.5:9b", "llama3.1:latest"],
+        "primer": ["gemma4:e4b", "llama3.1:8b", "gemma3:4b", "gemma3:1b", "qwen3.5:9b", "llama3.1:latest"],
+        "glossary": ["gemma4:e4b", "llama3.1:8b", "gemma3:4b", "gemma3:1b", "qwen3.5:9b", "llama3.1:latest"],
+        "methodology": ["gemma4:e4b", "llama3.1:8b", "gemma3:4b", "gemma3:1b", "qwen3.5:9b", "llama3.1:latest"],
+        "clinical": ["gemma4:e4b", "llama3.1:8b", "gemma3:4b", "gemma3:1b", "qwen3.5:9b", "llama3.1:latest"],
+        "bias": ["gemma4:e4b", "llama3.1:8b", "gemma3:4b", "gemma3:1b", "qwen3.5:9b", "llama3.1:latest"]
     }
 
     for key, req_model in routing.items():
@@ -361,8 +376,13 @@ def execute_query_plan(
         "claim_extractor": {"requested": routing["claim_extractor"], "resolved": resolved_routing["claim_extractor"], "duration_sec": 0.0, "fallback_logs": [n for n in fallback_logs if n.startswith("[claim_extractor]")]},
         "contradiction_detector": {"requested": routing["contradiction_detector"], "resolved": resolved_routing["contradiction_detector"], "duration_sec": 0.0, "fallback_logs": [n for n in fallback_logs if n.startswith("[contradiction_detector]")]},
         "consensus_analyst": {"requested": routing["consensus_analyst"], "resolved": resolved_routing["consensus_analyst"], "duration_sec": 0.0, "fallback_logs": [n for n in fallback_logs if n.startswith("[consensus_analyst]")]},
-        "synthesis": {"requested": routing["synthesis"], "resolved": resolved_routing["synthesis"], "duration_sec": 0.0, "fallback_logs": [n for n in fallback_logs if n.startswith("[synthesis]")]},
-        "experiment_planner": {"requested": routing["experiment_planner"], "resolved": resolved_routing["experiment_planner"], "duration_sec": 0.0, "fallback_logs": [n for n in fallback_logs if n.startswith("[experiment_planner]")]}
+        "synthesis": {"requested": routing.get("synthesis", ""), "resolved": resolved_routing.get("synthesis", ""), "duration_sec": 0.0, "fallback_logs": [n for n in fallback_logs if n.startswith("[synthesis]")]},
+        "experiment_planner": {"requested": routing.get("experiment_planner", ""), "resolved": resolved_routing.get("experiment_planner", ""), "duration_sec": 0.0, "fallback_logs": [n for n in fallback_logs if n.startswith("[experiment_planner]")]},
+        "primer": {"requested": routing.get("primer", ""), "resolved": resolved_routing.get("primer", ""), "duration_sec": 0.0, "fallback_logs": [n for n in fallback_logs if n.startswith("[primer]")]},
+        "glossary": {"requested": routing.get("glossary", ""), "resolved": resolved_routing.get("glossary", ""), "duration_sec": 0.0, "fallback_logs": [n for n in fallback_logs if n.startswith("[glossary]")]},
+        "methodology": {"requested": routing.get("methodology", ""), "resolved": resolved_routing.get("methodology", ""), "duration_sec": 0.0, "fallback_logs": [n for n in fallback_logs if n.startswith("[methodology]")]},
+        "clinical": {"requested": routing.get("clinical", ""), "resolved": resolved_routing.get("clinical", ""), "duration_sec": 0.0, "fallback_logs": [n for n in fallback_logs if n.startswith("[clinical]")]},
+        "bias": {"requested": routing.get("bias", ""), "resolved": resolved_routing.get("bias", ""), "duration_sec": 0.0, "fallback_logs": [n for n in fallback_logs if n.startswith("[bias]")]}
     }
     
     def parse_emb(val):
@@ -638,18 +658,57 @@ def execute_query_plan(
         if status_callback:
             status_callback("Designing step-by-step laboratory experiment protocol...")
         return design_protocol(plan.query, synthesis_answer or plan.query,
-                               model_name=resolved_routing["experiment_planner"], options=llm_options)
+                               model_name=resolved_routing.get("experiment_planner", "llama3.1:8b"), options=llm_options)
+
+    # Auxiliary Agents
+    def _do_primer():
+        if "primer" not in executed_agents and executed_agents: return None
+        if status_callback: status_callback("Generating Layperson Primer...")
+        return generate_primer(plan.query, model_name=resolved_routing.get("primer", "llama3.1:8b"), options=llm_options)
+
+    def _do_glossary():
+        if "glossary" not in executed_agents and executed_agents: return None
+        if status_callback: status_callback("Extracting Glossary Terms...")
+        return generate_glossary(result.get("context", ""), model_name=resolved_routing.get("glossary", "llama3.1:8b"), options=llm_options)
+
+    def _do_methodology():
+        if "methodology" not in executed_agents and executed_agents: return None
+        if status_callback: status_callback("Critiquing Experimental Methodology...")
+        return analyze_methodology(result.get("context", ""), model_name=resolved_routing.get("methodology", "llama3.1:8b"), options=llm_options)
+
+    def _do_bias():
+        if "bias" not in executed_agents and executed_agents: return None
+        if status_callback: status_callback("Detecting Conflicts of Interest and Bias...")
+        return detect_bias(result.get("context", ""), model_name=resolved_routing.get("bias", "llama3.1:8b"), options=llm_options)
 
     synthesis_start = time.time()
     synthesis_answer = ""
-    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as ex:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
         f_synth = ex.submit(_do_synthesis)
         f_cons = ex.submit(_do_consensus)
         f_exp = ex.submit(_do_experiment)
+        f_prim = ex.submit(_do_primer)
+        f_glos = ex.submit(_do_glossary)
+        f_meth = ex.submit(_do_methodology)
+        f_bias = ex.submit(_do_bias)
+        
         synth_out = f_synth.result()
         cons_out = f_cons.result()
         exp_out = f_exp.result()
+        prim_out = f_prim.result()
+        glos_out = f_glos.result()
+        meth_out = f_meth.result()
+        bias_out = f_bias.result()
     routing_stats["synthesis"]["duration_sec"] = round(time.time() - synthesis_start, 2)
+    
+    if prim_out:
+        routing_stats["primer"]["duration_sec"] = round(prim_out.get("execution_time_sec", 0.0), 2)
+    if glos_out:
+        routing_stats["glossary"]["duration_sec"] = round(glos_out.get("execution_time_sec", 0.0), 2)
+    if meth_out:
+        routing_stats["methodology"]["duration_sec"] = round(meth_out.get("execution_time_sec", 0.0), 2)
+    if bias_out:
+        routing_stats["bias"]["duration_sec"] = round(bias_out.get("execution_time_sec", 0.0), 2)
 
     if synth_out:
         synthesis_answer, verification_trace = synth_out
@@ -669,6 +728,30 @@ def execute_query_plan(
                 f.write(cons_out["consensus_report"])
         except Exception:
             pass
+            
+        # Clinical Translation relies on the Consensus text, so we run it after consensus resolves
+        if "clinical" in executed_agents or not executed_agents:
+            if status_callback: status_callback("Analyzing Clinical Translation Readiness...")
+            clin_out = analyze_clinical_translation(cons_out["consensus_report"], model_name=resolved_routing.get("clinical", "llama3.1:8b"), options=llm_options)
+            try:
+                with open("dataset/clinical_report.md", "w", encoding="utf-8") as f:
+                    f.write(clin_out["clinical_report"])
+            except Exception: pass
+            if clin_out:
+                routing_stats["clinical"] = {"duration_sec": round(clin_out.get("execution_time_sec", 0.0), 2)}
+
+    # Save auxiliary reports
+    for out_dict, filename, key in [
+        (prim_out, "primer_report.md", "primer_report"),
+        (glos_out, "glossary_report.md", "glossary_report"),
+        (meth_out, "methodology_report.md", "methodology_report"),
+        (bias_out, "bias_report.md", "bias_report")
+    ]:
+        if out_dict and key in out_dict:
+            try:
+                with open(f"dataset/{filename}", "w", encoding="utf-8") as f:
+                    f.write(out_dict[key])
+            except Exception: pass
 
     # ELN depends on the experiment output, so it runs after.
     if exp_out:

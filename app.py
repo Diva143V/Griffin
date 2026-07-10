@@ -19,13 +19,24 @@ def run_with_stop_button(func, *args, in_sidebar=False, show_terminal=False, **k
     import threading
     import time
     
-    res_container = {"done": False, "result": None, "error": None}
+    res_container = {"done": False, "result": None, "error": None, "stopped": False}
+    stop_event = threading.Event()
+    kwargs["stop_event"] = stop_event
     
     def worker():
         try:
             res_container["result"] = func(*args, **kwargs)
+        except TypeError:
+            try:
+                # Fallback if func doesn't accept stop_event
+                kwargs.pop("stop_event", None)
+                res_container["result"] = func(*args, **kwargs)
+            except Exception as e:
+                if not res_container["stopped"]:
+                    res_container["error"] = e
         except Exception as e:
-            res_container["error"] = e
+            if not res_container["stopped"]:
+                res_container["error"] = e
         finally:
             res_container["done"] = True
             
@@ -36,7 +47,10 @@ def run_with_stop_button(func, *args, in_sidebar=False, show_terminal=False, **k
     
     stop_placeholder = st.sidebar.empty() if in_sidebar else st.empty()
     if stop_placeholder.button("⏹️ Stop / Cancel", key=f"stop_btn_{id(func)}"):
-        st.rerun()
+        res_container["stopped"] = True
+        stop_event.set()
+        st.warning("Stopping... The background process will terminate shortly.")
+        st.stop()
         
     expander_placeholder = st.empty()
     log_placeholder = None
@@ -74,7 +88,7 @@ def run_comparison_pipeline(eval_question, encoder_model, ranked_df, contradicti
     status_placeholder.info("🔍 Standard RAG: Retrieving relevant papers from database...")
     t_ret_start = time.time()
     std_context, std_sources = graph_rag.get_standard_rag_context(
-        eval_question, encoder_model, ranked_df, eval_k
+        eval_question, encoder_model, ranked_df, max_papers=eval_k
     )
     std_ret_time = time.time() - t_ret_start
     
@@ -98,7 +112,7 @@ Please provide a structured, concise response backed by the contextual evidence 
     status_placeholder.info("🔍 Graph RAG: Retrieving papers and mapping claim relationships...")
     t_ret_start = time.time()
     graph_context, graph_sources, graph_relations = graph_rag.get_graph_rag_context(
-        eval_question, encoder_model, ranked_df, contradictions, eval_k
+        eval_question, encoder_model, ranked_df, contradictions, max_papers=eval_k
     )
     graph_ret_time = time.time() - t_ret_start
     

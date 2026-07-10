@@ -117,7 +117,7 @@ def get_dashboard_metrics() -> Dict[str, str]:
         "contradictions": str(n_contr),
         "agreements": str(n_agree + n_partial),
         "claims": str(claims),
-        "agents": agents if agents != "—" else "7",
+        "agents": agents if agents != "—" else "0",
         "goal": goal,
         "pipeline_status": pipeline_status,
         "progress": str(progress),

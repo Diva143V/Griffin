@@ -19,6 +19,7 @@ def node_card(node: dict):
 
 def knowledge_graph():
     """Plotly knowledge graph from main State (used by main workbench integrations)."""
+    # pyrefly: ignore [missing-import]
     from griffin_reflex.griffin_reflex import State
 
     return rx.vstack(

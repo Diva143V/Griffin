@@ -36,7 +36,7 @@ def glass_card(content, **kwargs):
 def metric(title, value, icon):
     return glass_card(
         rx.vstack(
-            rx.text(icon, font_size="28px"),
+            rx.text(icon, style={"fontSize": "28px"}),
             rx.text(title, color="gray", size="2"),
             rx.heading(value, size="7"),
             spacing="2",

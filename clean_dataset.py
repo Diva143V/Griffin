@@ -16,7 +16,7 @@ def main():
 
     if args.query:
         # Extract keywords of length > 3, excluding common stop words
-        stop_words = {"does", "what", "associated", "with", "from", "therapy", "disease", "treatment", "effect", "effects", "risk", "reduce", "improves", "improve", "levels", "level", "cancer"}
+        stop_words = {"does", "what", "associated", "with", "from", "therapy", "disease", "treatment", "effect", "effects", "risk", "reduce", "improves", "improve", "levels", "level"}
         words = [w.strip().replace("?", "").replace(".", "").replace(",", "").lower() for w in args.query.split()]
         keywords = [w for w in words if len(w) > 3 and w not in stop_words]
         

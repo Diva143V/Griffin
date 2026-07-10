@@ -20,7 +20,7 @@ def fetch_page(session: requests.Session, query: str, page: int, page_size: int)
     return data.get("resultList", {}).get("result", [])
 
 
-def collect(query: str, page_size: int = 100, max_pages: int = 10, rate_limit_sec: float = 1.0) -> pd.DataFrame:
+def collect(query: str, limit: int = 100, page_size: int = 100, max_pages: int = 10, rate_limit_sec: float = 1.0) -> pd.DataFrame:
     session = requests.Session()
     papers = []
     for page in range(1, max_pages + 1):
@@ -42,14 +42,14 @@ def collect(query: str, page_size: int = 100, max_pages: int = 10, rate_limit_se
                 "pmid": item.get("pmid", ""),
                 "source": "PMC",
             })
-            if len(papers) >= page_size:
+            if len(papers) >= limit:
                 break
 
         # respect rate limit
         time.sleep(rate_limit_sec)
 
         # stop early if we hit limit or fewer results than page_size
-        if len(papers) >= page_size or len(results) < page_size:
+        if len(papers) >= limit or len(results) < page_size:
             break
 
     df = pd.DataFrame(papers)
