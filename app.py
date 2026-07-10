@@ -191,227 +191,638 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Clean premium styling
+# Modern premium styling — fonts, spacing, animations
 st.markdown("""
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Poppins:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 
 <style>
-    /* Global Base */
+    /* ── Keyframe Animations ─────────────────────────────────────── */
+    @keyframes fadeInUp {
+        from { opacity: 0; transform: translateY(14px); }
+        to   { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes fadeIn {
+        from { opacity: 0; }
+        to   { opacity: 1; }
+    }
+    @keyframes slideInLeft {
+        from { opacity: 0; transform: translateX(-12px); }
+        to   { opacity: 1; transform: translateX(0); }
+    }
+    @keyframes softPulse {
+        0%, 100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.35); }
+        50%      { box-shadow: 0 0 0 8px rgba(99, 102, 241, 0); }
+    }
+    @keyframes shimmer {
+        0%   { background-position: -200% 0; }
+        100% { background-position:  200% 0; }
+    }
+    @keyframes glowBorder {
+        0%, 100% { border-color: rgba(99, 102, 241, 0.35); }
+        50%      { border-color: rgba(129, 140, 248, 0.7); }
+    }
+    @keyframes floatY {
+        0%, 100% { transform: translateY(0); }
+        50%      { transform: translateY(-3px); }
+    }
+    @keyframes tabUnderline {
+        from { transform: scaleX(0); }
+        to   { transform: scaleX(1); }
+    }
+
+    /* ── CSS Variables ───────────────────────────────────────────── */
+    :root {
+        --gx-bg-0: #070a12;
+        --gx-bg-1: #0b1020;
+        --gx-bg-2: #111827;
+        --gx-bg-3: #1a2236;
+        --gx-border: rgba(148, 163, 184, 0.14);
+        --gx-border-strong: rgba(148, 163, 184, 0.28);
+        --gx-text: #e8eef9;
+        --gx-text-muted: #94a3b8;
+        --gx-accent: #818cf8;
+        --gx-accent-2: #38bdf8;
+        --gx-accent-deep: #6366f1;
+        --gx-success: #34d399;
+        --gx-warn: #fbbf24;
+        --gx-danger: #f87171;
+        --gx-radius-sm: 10px;
+        --gx-radius-md: 14px;
+        --gx-radius-lg: 18px;
+        --gx-radius-xl: 22px;
+        --gx-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+        --gx-shadow-glow: 0 8px 40px rgba(99, 102, 241, 0.18);
+        --gx-font: 'DM Sans', system-ui, -apple-system, sans-serif;
+        --gx-font-display: 'Outfit', 'DM Sans', system-ui, sans-serif;
+        --gx-font-mono: 'JetBrains Mono', ui-monospace, monospace;
+        --gx-ease: cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    /* ── Global Base ─────────────────────────────────────────────── */
     .stApp {
-        background: radial-gradient(circle at 50% 0%, #171d2b 0%, #0d1117 75%);
-        color: #E6EDF3;
-        font-family: 'Inter', sans-serif;
+        background:
+            radial-gradient(ellipse 80% 50% at 20% -10%, rgba(99, 102, 241, 0.16) 0%, transparent 55%),
+            radial-gradient(ellipse 60% 40% at 90% 10%, rgba(56, 189, 248, 0.10) 0%, transparent 50%),
+            radial-gradient(ellipse 50% 30% at 50% 100%, rgba(129, 140, 248, 0.06) 0%, transparent 60%),
+            linear-gradient(180deg, var(--gx-bg-0) 0%, var(--gx-bg-1) 100%) !important;
+        color: var(--gx-text);
+        font-family: var(--gx-font);
+        font-size: 15.5px;
+        letter-spacing: 0.01em;
     }
 
-    html, body, [class*="css"] {
-        font-family: 'Inter', sans-serif;
-        color: #D6DCE5;
+    html, body, [class*="css"],
+    .stMarkdown, .stText, p, span, label, div {
+        font-family: var(--gx-font) !important;
+        color: var(--gx-text);
     }
 
-    /* Headings */
+    /* Subtle page entrance */
+    .main .block-container {
+        animation: fadeInUp 0.55s var(--gx-ease) both;
+        padding-top: 2.25rem !important;
+        padding-bottom: 3rem !important;
+        padding-left: 2.5rem !important;
+        padding-right: 2.5rem !important;
+        max-width: 1280px;
+    }
+
+    /* ── Headings ────────────────────────────────────────────────── */
     h1, h2, h3, h4, h5, h6 {
-        font-family: 'Poppins', sans-serif !important;
-        color: #F4F7FA !important;
-        letter-spacing: -0.5px;
-        font-weight: 600 !important;
+        font-family: var(--gx-font-display) !important;
+        color: #f8fafc !important;
+        letter-spacing: -0.03em !important;
+        font-weight: 700 !important;
+        line-height: 1.2 !important;
     }
 
     h1 {
-        font-size: 2.5rem !important;
-        font-weight: 700 !important;
-        background: linear-gradient(135deg, #58A6FF 0%, #3B82F6 100%);
+        font-size: 2.65rem !important;
+        font-weight: 800 !important;
+        background: linear-gradient(120deg, #e0e7ff 0%, #818cf8 40%, #38bdf8 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
-        margin-bottom: 6px !important;
+        background-clip: text;
+        margin-bottom: 0.35rem !important;
+        animation: fadeInUp 0.6s var(--gx-ease) both;
     }
 
     h2 {
-        font-size: 1.7rem !important;
-        border-bottom: 1px solid #21262d;
-        padding-bottom: 8px;
-        margin-top: 24px !important;
+        font-size: 1.75rem !important;
+        border-bottom: 1px solid var(--gx-border);
+        padding-bottom: 12px !important;
+        margin-top: 28px !important;
+        margin-bottom: 18px !important;
     }
 
     h3 {
-        font-size: 1.3rem !important;
-        color: #58A6FF !important;
+        font-size: 1.35rem !important;
+        color: var(--gx-accent) !important;
+        -webkit-text-fill-color: var(--gx-accent) !important;
+        background: none !important;
+        margin-top: 8px !important;
+        margin-bottom: 12px !important;
     }
 
-    p, span, div {
-        line-height: 1.7;
+    h4, h5 {
+        font-size: 1.05rem !important;
+        color: #cbd5e1 !important;
+        -webkit-text-fill-color: #cbd5e1 !important;
+        background: none !important;
+        font-weight: 600 !important;
     }
 
-    /* Premium Cards & Containers */
-    .card, [data-testid="stMetricValue"] {
-        background: rgba(22, 27, 34, 0.7) !important;
-        backdrop-filter: blur(12px) !important;
-        -webkit-backdrop-filter: blur(12px) !important;
-        border: 1px solid rgba(48, 54, 61, 0.6) !important;
-        border-radius: 16px !important;
-        padding: 24px;
-        margin-bottom: 20px;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    p, span, div, li {
+        line-height: 1.72 !important;
+    }
+
+    /* Captions / muted */
+    .stCaption, [data-testid="stCaptionContainer"] {
+        color: var(--gx-text-muted) !important;
+        font-size: 0.92rem !important;
+        letter-spacing: 0.01em;
+        animation: fadeIn 0.7s var(--gx-ease) both;
+    }
+
+    /* ── Premium Cards ───────────────────────────────────────────── */
+    .card, [data-testid="stMetric"] {
+        background: linear-gradient(145deg, rgba(17, 24, 39, 0.85) 0%, rgba(11, 16, 32, 0.75) 100%) !important;
+        backdrop-filter: blur(16px) saturate(140%) !important;
+        -webkit-backdrop-filter: blur(16px) saturate(140%) !important;
+        border: 1px solid var(--gx-border) !important;
+        border-radius: var(--gx-radius-lg) !important;
+        padding: 22px 24px !important;
+        margin-bottom: 18px;
+        box-shadow: var(--gx-shadow);
+        transition: transform 0.35s var(--gx-ease), box-shadow 0.35s var(--gx-ease), border-color 0.35s ease;
+        animation: fadeInUp 0.5s var(--gx-ease) both;
     }
 
     .card:hover {
-        border-color: rgba(59, 130, 246, 0.6) !important;
-        box-shadow: 0 8px 30px rgba(59, 130, 246, 0.15);
-        transform: translateY(-3px);
+        border-color: rgba(129, 140, 248, 0.45) !important;
+        box-shadow: var(--gx-shadow-glow);
+        transform: translateY(-4px);
     }
 
-    /* Premium Badges */
+    /* Staggered card delay helpers */
+    .card:nth-child(1) { animation-delay: 0.05s; }
+    .card:nth-child(2) { animation-delay: 0.12s; }
+    .card:nth-child(3) { animation-delay: 0.18s; }
+
+    /* ── Badges ──────────────────────────────────────────────────── */
     .badge {
-        padding: 4px 10px;
+        padding: 5px 12px;
         border-radius: 999px;
-        font-size: 0.8rem;
+        font-size: 0.78rem;
         font-weight: 600;
+        letter-spacing: 0.02em;
         display: inline-block;
         border: 1px solid transparent;
+        transition: transform 0.2s var(--gx-ease), box-shadow 0.2s ease;
+    }
+    .badge:hover {
+        transform: translateY(-1px);
     }
 
-    /* Metric Override */
+    /* ── Metrics ─────────────────────────────────────────────────── */
     [data-testid="stMetricValue"] {
-        font-family: 'Poppins', sans-serif !important;
-        font-size: 2.2rem !important;
+        font-family: var(--gx-font-display) !important;
+        font-size: 2.15rem !important;
         font-weight: 700 !important;
-        color: #58A6FF !important;
-        padding: 16px 20px !important;
-        background: linear-gradient(145deg, rgba(22, 27, 34, 0.8) 0%, rgba(13, 17, 23, 0.8) 100%) !important;
+        color: var(--gx-accent) !important;
+        padding: 14px 18px !important;
+        background: linear-gradient(145deg, rgba(30, 27, 75, 0.45) 0%, rgba(15, 23, 42, 0.7) 100%) !important;
+        border-radius: var(--gx-radius-md) !important;
+        border: 1px solid rgba(129, 140, 248, 0.2) !important;
+        transition: transform 0.3s var(--gx-ease), box-shadow 0.3s ease;
+    }
+
+    [data-testid="stMetric"]:hover [data-testid="stMetricValue"] {
+        transform: scale(1.03);
+        box-shadow: 0 0 24px rgba(99, 102, 241, 0.2);
     }
 
     [data-testid="stMetricLabel"] {
-        font-family: 'Inter', sans-serif !important;
-        font-size: 0.8rem !important;
-        color: #8B949E !important;
+        font-family: var(--gx-font) !important;
+        font-size: 0.78rem !important;
+        color: var(--gx-text-muted) !important;
         text-transform: uppercase !important;
-        letter-spacing: 1.5px !important;
+        letter-spacing: 1.6px !important;
         font-weight: 600 !important;
-        margin-bottom: 6px !important;
+        margin-bottom: 8px !important;
     }
 
-    /* Sidebar Customization */
+    /* ── Sidebar ─────────────────────────────────────────────────── */
     [data-testid="stSidebar"] {
-        background: #0d1117 !important;
-        border-right: 1px solid #21262d !important;
+        background:
+            linear-gradient(180deg, rgba(11, 16, 32, 0.98) 0%, rgba(7, 10, 18, 0.99) 100%) !important;
+        border-right: 1px solid var(--gx-border) !important;
+        min-width: 320px !important;
+        animation: slideInLeft 0.45s var(--gx-ease) both;
+    }
+
+    [data-testid="stSidebar"] > div:first-child {
+        padding: 1.4rem 1.15rem 2rem !important;
     }
 
     [data-testid="stSidebar"] * {
-        color: #DDE3EA;
+        color: #e2e8f0;
     }
 
-    /* Tabs Styling */
+    [data-testid="stSidebar"] h1,
+    [data-testid="stSidebar"] h2,
+    [data-testid="stSidebar"] h3 {
+        font-family: var(--gx-font-display) !important;
+        letter-spacing: -0.02em !important;
+    }
+
+    [data-testid="stSidebar"] .stMarkdown h3 {
+        font-size: 0.95rem !important;
+        color: var(--gx-accent) !important;
+        -webkit-text-fill-color: var(--gx-accent) !important;
+        text-transform: uppercase;
+        letter-spacing: 0.08em !important;
+        margin-top: 0.5rem !important;
+    }
+
+    section[data-testid="stSidebar"] [data-testid="stVerticalBlock"] {
+        gap: 0.55rem !important;
+    }
+
+    /* ── Tabs (main + nested) ────────────────────────────────────── */
     .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
-        margin-bottom: 24px;
-        border-bottom: 1px solid #21262d;
+        gap: 10px;
+        margin-bottom: 28px;
+        padding: 6px;
+        border-bottom: none !important;
+        background: rgba(15, 23, 42, 0.55);
+        border: 1px solid var(--gx-border);
+        border-radius: var(--gx-radius-xl);
+        backdrop-filter: blur(12px);
+        flex-wrap: wrap;
+        row-gap: 8px;
     }
 
     .stTabs [data-baseweb="tab"] {
-        background: rgba(22, 27, 34, 0.5) !important;
-        border: 1px solid rgba(48, 54, 61, 0.8) !important;
-        border-bottom: none !important;
-        border-radius: 12px 12px 0 0 !important;
-        padding: 10px 18px !important;
-        color: #8B949E !important;
-        font-weight: 500;
-        font-family: 'Inter', sans-serif;
-        transition: all 0.2s ease;
+        background: transparent !important;
+        border: 1px solid transparent !important;
+        border-radius: 999px !important;
+        padding: 12px 20px !important;
+        min-height: 44px !important;
+        color: var(--gx-text-muted) !important;
+        font-weight: 500 !important;
+        font-size: 0.92rem !important;
+        font-family: var(--gx-font) !important;
+        letter-spacing: 0.01em;
+        transition: all 0.28s var(--gx-ease) !important;
+        position: relative;
+        overflow: hidden;
     }
 
     .stTabs [data-baseweb="tab"]:hover {
-        background: rgba(33, 38, 45, 0.7) !important;
-        color: #F0F6FC !important;
+        background: rgba(129, 140, 248, 0.10) !important;
+        color: #f1f5f9 !important;
+        transform: translateY(-1px);
     }
 
     .stTabs [aria-selected="true"] {
-        background: #161b22 !important;
-        border: 1px solid #30363d !important;
-        border-bottom: 2px solid #58A6FF !important;
-        color: #58A6FF !important;
-        font-weight: 600 !important;
+        background: linear-gradient(135deg, rgba(99, 102, 241, 0.28) 0%, rgba(56, 189, 248, 0.18) 100%) !important;
+        border: 1px solid rgba(129, 140, 248, 0.45) !important;
+        color: #eef2ff !important;
+        font-weight: 650 !important;
+        box-shadow: 0 4px 18px rgba(99, 102, 241, 0.22);
     }
 
-    /* Smooth Expanders */
-    .streamlit-expanderHeader {
-        background-color: rgba(22, 27, 34, 0.4) !important;
-        border: 1px solid #21262d !important;
-        border-radius: 10px !important;
-        padding: 12px 16px !important;
-        color: #c9d1d9 !important;
-        font-weight: 500 !important;
-        font-family: 'Poppins', sans-serif;
-    }
-    
-    .streamlit-expanderContent {
-        background-color: rgba(22, 27, 34, 0.1) !important;
-        border: 1px solid #21262d !important;
-        border-top: none !important;
-        border-radius: 0 0 10px 10px !important;
-        padding: 16px !important;
+    .stTabs [data-baseweb="tab-highlight"] {
+        display: none !important;
     }
 
-    /* Custom Tables & DataFrames */
-    [data-testid="stDataFrame"] {
-        border-radius: 12px;
+    .stTabs [data-baseweb="tab-border"] {
+        display: none !important;
+    }
+
+    .stTabs [data-baseweb="tab-panel"] {
+        animation: fadeInUp 0.4s var(--gx-ease) both;
+        padding-top: 4px;
+    }
+
+    /* Nested subtabs slightly smaller */
+    .stTabs .stTabs [data-baseweb="tab"] {
+        padding: 9px 16px !important;
+        min-height: 38px !important;
+        font-size: 0.86rem !important;
+    }
+
+    .stTabs .stTabs [data-baseweb="tab-list"] {
+        margin-bottom: 18px;
+        padding: 4px;
+        border-radius: var(--gx-radius-lg);
+    }
+
+    /* ── Expanders ───────────────────────────────────────────────── */
+    [data-testid="stExpander"] {
+        border: 1px solid var(--gx-border) !important;
+        border-radius: var(--gx-radius-md) !important;
+        background: rgba(15, 23, 42, 0.45) !important;
+        margin-bottom: 12px !important;
         overflow: hidden;
-        border: 1px solid #30363d;
+        transition: border-color 0.25s ease, box-shadow 0.25s ease;
+        animation: fadeInUp 0.45s var(--gx-ease) both;
     }
 
-    /* Input & Selection Elements */
+    [data-testid="stExpander"]:hover {
+        border-color: rgba(129, 140, 248, 0.35) !important;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+    }
+
+    .streamlit-expanderHeader,
+    [data-testid="stExpander"] summary,
+    [data-testid="stExpander"] details summary {
+        background: transparent !important;
+        border: none !important;
+        border-radius: var(--gx-radius-md) !important;
+        padding: 14px 18px !important;
+        color: #e2e8f0 !important;
+        font-weight: 600 !important;
+        font-family: var(--gx-font-display) !important;
+        font-size: 0.95rem !important;
+        letter-spacing: -0.01em;
+        transition: background 0.2s ease;
+    }
+
+    .streamlit-expanderHeader:hover,
+    [data-testid="stExpander"] summary:hover {
+        background: rgba(129, 140, 248, 0.08) !important;
+    }
+
+    .streamlit-expanderContent,
+    [data-testid="stExpander"] [data-testid="stExpanderDetails"] {
+        background: rgba(7, 10, 18, 0.35) !important;
+        border-top: 1px solid var(--gx-border) !important;
+        padding: 16px 18px !important;
+        animation: fadeIn 0.3s ease both;
+    }
+
+    /* ── DataFrames / Tables ─────────────────────────────────────── */
+    [data-testid="stDataFrame"] {
+        border-radius: var(--gx-radius-md) !important;
+        overflow: hidden;
+        border: 1px solid var(--gx-border) !important;
+        box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
+        animation: fadeInUp 0.45s var(--gx-ease) both;
+    }
+
+    [data-testid="stDataFrame"] > div {
+        background: rgba(15, 23, 42, 0.6) !important;
+    }
+
+    /* ── Inputs ──────────────────────────────────────────────────── */
     .stTextInput input,
-    .stSelectbox div,
-    .stMultiSelect div,
+    .stSelectbox [data-baseweb="select"] > div,
+    .stMultiSelect [data-baseweb="select"] > div,
     .stTextArea textarea,
-    .stNumberInput input {
-        border-radius: 8px !important;
-        border: 1px solid #30363d !important;
-        background-color: #0d1117 !important;
-        color: #E6EDF3 !important;
-        font-family: 'Inter', sans-serif !important;
+    .stNumberInput input,
+    .stSelectbox div[data-baseweb="select"] {
+        border-radius: var(--gx-radius-sm) !important;
+        border: 1px solid var(--gx-border-strong) !important;
+        background-color: rgba(7, 10, 18, 0.75) !important;
+        color: var(--gx-text) !important;
+        font-family: var(--gx-font) !important;
+        font-size: 0.95rem !important;
+        padding-top: 10px !important;
+        padding-bottom: 10px !important;
+        min-height: 42px !important;
+        transition: border-color 0.25s ease, box-shadow 0.25s ease !important;
+    }
+
+    .stTextArea textarea {
+        min-height: 96px !important;
+        line-height: 1.6 !important;
+        padding: 12px 14px !important;
     }
 
     .stTextInput input:focus,
-    .stTextArea textarea:focus {
-        border-color: #58A6FF !important;
-        box-shadow: 0 0 0 1px #58A6FF !important;
+    .stTextArea textarea:focus,
+    .stNumberInput input:focus {
+        border-color: var(--gx-accent) !important;
+        box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.22) !important;
+        outline: none !important;
     }
 
-    /* Buttons */
-    .stButton button {
-        border-radius: 8px !important;
-        font-family: 'Poppins', sans-serif !important;
+    /* Labels */
+    .stTextInput label,
+    .stSelectbox label,
+    .stTextArea label,
+    .stNumberInput label,
+    .stSlider label,
+    .stMultiSelect label {
+        font-size: 0.88rem !important;
         font-weight: 600 !important;
-        padding: 8px 20px !important;
-        transition: all 0.2s ease !important;
+        color: #cbd5e1 !important;
+        letter-spacing: 0.01em !important;
+        margin-bottom: 6px !important;
     }
 
-    .stButton button[kind="primary"] {
-        background: linear-gradient(135deg, #1f6feb 0%, #0969da 100%) !important;
+    /* ── Buttons ─────────────────────────────────────────────────── */
+    .stButton button {
+        border-radius: 12px !important;
+        font-family: var(--gx-font-display) !important;
+        font-weight: 600 !important;
+        font-size: 0.92rem !important;
+        padding: 10px 22px !important;
+        min-height: 44px !important;
+        letter-spacing: 0.01em;
+        transition: all 0.28s var(--gx-ease) !important;
+        border: 1px solid var(--gx-border-strong) !important;
+        background: rgba(30, 41, 59, 0.7) !important;
+        color: #e2e8f0 !important;
+    }
+
+    .stButton button:hover {
+        transform: translateY(-2px) !important;
+        border-color: rgba(129, 140, 248, 0.5) !important;
+        box-shadow: 0 8px 22px rgba(0, 0, 0, 0.28) !important;
+        background: rgba(51, 65, 85, 0.85) !important;
+    }
+
+    .stButton button:active {
+        transform: translateY(0) scale(0.98) !important;
+    }
+
+    .stButton button[kind="primary"],
+    .stButton > button[data-testid="baseButton-primary"] {
+        background: linear-gradient(135deg, #6366f1 0%, #4f46e5 50%, #2563eb 100%) !important;
         border: none !important;
         color: white !important;
-        box-shadow: 0 4px 12px rgba(31, 111, 235, 0.3) !important;
+        box-shadow: 0 6px 20px rgba(99, 102, 241, 0.38) !important;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .stButton button[kind="primary"]::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(110deg, transparent 20%, rgba(255,255,255,0.18) 45%, transparent 70%);
+        background-size: 200% 100%;
+        opacity: 0;
+        transition: opacity 0.3s ease;
     }
 
     .stButton button[kind="primary"]:hover {
-        box-shadow: 0 6px 18px rgba(31, 111, 235, 0.45) !important;
-        transform: translateY(-1px) !important;
+        box-shadow: 0 10px 28px rgba(99, 102, 241, 0.5) !important;
+        transform: translateY(-2px) !important;
+        filter: brightness(1.06);
     }
 
-    .block-container {
-        padding-top: 1.8rem;
-        padding-bottom: 2rem;
+    .stButton button[kind="primary"]:hover::after {
+        opacity: 1;
+        animation: shimmer 1.4s linear infinite;
     }
-    
-    /* Code block styling */
+
+    /* ── Toggles / Checkboxes / Sliders ──────────────────────────── */
+    [data-testid="stCheckbox"],
+    [data-testid="stWidgetLabel"] {
+        font-size: 0.9rem !important;
+    }
+
+    .stSlider > div[data-baseweb="slider"] {
+        padding-top: 6px !important;
+        padding-bottom: 6px !important;
+    }
+
+    /* ── Alerts / Info boxes ─────────────────────────────────────── */
+    [data-testid="stAlert"] {
+        border-radius: var(--gx-radius-md) !important;
+        border: 1px solid var(--gx-border) !important;
+        backdrop-filter: blur(8px);
+        animation: fadeInUp 0.4s var(--gx-ease) both;
+        padding: 14px 16px !important;
+    }
+
+    /* ── Chat messages ───────────────────────────────────────────── */
+    [data-testid="stChatMessage"] {
+        border-radius: var(--gx-radius-md) !important;
+        border: 1px solid var(--gx-border);
+        background: rgba(15, 23, 42, 0.55) !important;
+        margin-bottom: 10px !important;
+        padding: 12px 14px !important;
+        animation: fadeInUp 0.35s var(--gx-ease) both;
+        transition: border-color 0.2s ease;
+    }
+
+    [data-testid="stChatMessage"]:hover {
+        border-color: rgba(129, 140, 248, 0.3);
+    }
+
+    /* ── Dividers ────────────────────────────────────────────────── */
+    hr, [data-testid="stMarkdownContainer"] hr {
+        border: none !important;
+        height: 1px !important;
+        background: linear-gradient(90deg, transparent, var(--gx-border-strong), transparent) !important;
+        margin: 1.4rem 0 !important;
+    }
+
+    /* ── Code ────────────────────────────────────────────────────── */
+    code, .stCode, pre {
+        font-family: var(--gx-font-mono) !important;
+        font-size: 0.86rem !important;
+    }
+
     code {
-        font-family: 'JetBrains Mono', monospace !important;
-        background-color: #161b22 !important;
-        border-radius: 4px;
-        padding: 2px 6px;
-        color: #ff7b72;
+        background-color: rgba(30, 41, 59, 0.9) !important;
+        border-radius: 6px;
+        padding: 2px 7px;
+        color: #fca5a5 !important;
+        border: 1px solid rgba(248, 113, 113, 0.15);
+    }
+
+    pre, .stCodeBlock {
+        border-radius: var(--gx-radius-md) !important;
+        border: 1px solid var(--gx-border) !important;
+        background: rgba(7, 10, 18, 0.85) !important;
+    }
+
+    /* ── Progress / Spinners ─────────────────────────────────────── */
+    .stSpinner > div {
+        border-top-color: var(--gx-accent) !important;
+    }
+
+    [data-testid="stProgress"] > div > div {
+        background: linear-gradient(90deg, #6366f1, #38bdf8) !important;
+        border-radius: 999px !important;
+    }
+
+    /* ── Dialog / Modal ──────────────────────────────────────────── */
+    [data-testid="stModal"] > div,
+    div[role="dialog"] {
+        border-radius: var(--gx-radius-xl) !important;
+        border: 1px solid rgba(129, 140, 248, 0.25) !important;
+        background: linear-gradient(160deg, #111827 0%, #0b1020 100%) !important;
+        box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(129, 140, 248, 0.1) !important;
+        animation: fadeInUp 0.35s var(--gx-ease) both;
+        padding: 1.5rem !important;
+    }
+
+    /* ── Scrollbars ──────────────────────────────────────────────── */
+    ::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+    }
+    ::-webkit-scrollbar-track {
+        background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+        background: rgba(100, 116, 139, 0.45);
+        border-radius: 999px;
+        border: 2px solid transparent;
+        background-clip: padding-box;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+        background: rgba(129, 140, 248, 0.55);
+        background-clip: padding-box;
+        border: 2px solid transparent;
+    }
+
+    /* ── Layer legend chips (pipeline) ───────────────────────────── */
+    .gx-chip {
+        display: inline-flex;
+        align-items: center;
+        padding: 6px 14px;
+        border-radius: 999px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        border: 1px solid;
+        transition: transform 0.22s var(--gx-ease), box-shadow 0.22s ease;
+        animation: fadeInUp 0.45s var(--gx-ease) both;
+        cursor: default;
+    }
+    .gx-chip:hover {
+        transform: translateY(-2px) scale(1.03);
+        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
+    }
+
+    /* ── Utility: pulse primary CTA subtly ───────────────────────── */
+    .stButton button[kind="primary"] {
+        animation: softPulse 2.8s ease-in-out infinite;
+    }
+
+    /* Reduce motion for accessibility */
+    @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after {
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.01ms !important;
+        }
+    }
+
+    /* ── Selection highlight ─────────────────────────────────────── */
+    ::selection {
+        background: rgba(129, 140, 248, 0.35);
+        color: #fff;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -587,9 +998,9 @@ def render_network_graph(contradictions_dict):
                 "label": lbl,
                 "title": f"<b>Paper:</b> {t_a}<br><br><b>Claim:</b> {c_a}",
                 "color": {
-                    "background": "#0d1117",
-                    "border": "#58a6ff",
-                    "highlight": {"background": "#58a6ff", "border": "#c9d1d9"}
+                    "background": "#0b1020",
+                    "border": "#818cf8",
+                    "highlight": {"background": "#6366f1", "border": "#e0e7ff"}
                 }
             })
             
@@ -603,9 +1014,9 @@ def render_network_graph(contradictions_dict):
                 "label": lbl,
                 "title": f"<b>Paper:</b> {t_b}<br><br><b>Claim:</b> {c_b}",
                 "color": {
-                    "background": "#0d1117",
-                    "border": "#58a6ff",
-                    "highlight": {"background": "#58a6ff", "border": "#c9d1d9"}
+                    "background": "#0b1020",
+                    "border": "#818cf8",
+                    "highlight": {"background": "#6366f1", "border": "#e0e7ff"}
                 }
             })
             
@@ -629,7 +1040,7 @@ def render_network_graph(contradictions_dict):
             "label": label,
             "color": color,
             "width": width,
-            "font": {"color": "#8b949e", "size": 9, "strokeWidth": 0, "face": "Inter, sans-serif"}
+            "font": {"color": "#94a3b8", "size": 10, "strokeWidth": 0, "face": "DM Sans, sans-serif"}
         })
 
     nodes_json = json.dumps(nodes_list)
@@ -640,38 +1051,39 @@ def render_network_graph(contradictions_dict):
     <html>
     <head>
         <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+        <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
         <style type="text/css">
             html, body {{
                 margin: 0;
                 padding: 0;
-                background-color: #0d1117;
+                background-color: #070a12;
                 overflow: hidden;
-                font-family: 'Inter', sans-serif;
+                font-family: 'DM Sans', system-ui, sans-serif;
             }}
             #mynetwork {{
                 width: 100%;
-                height: 400px;
-                border: 1px solid #30363d;
-                border-radius: 14px;
-                background-color: #0d1117;
+                height: 420px;
+                border: 1px solid rgba(148, 163, 184, 0.18);
+                border-radius: 18px;
+                background:
+                    radial-gradient(ellipse 70% 50% at 30% 20%, rgba(99,102,241,0.12) 0%, transparent 55%),
+                    #070a12;
             }}
-            /* Clean visual tooltips matching premium dark styling */
             div.vis-tooltip {{
                 position: absolute;
                 visibility: hidden;
-                padding: 12px;
+                padding: 14px 16px;
                 white-space: pre-wrap;
-                background-color: rgba(22, 27, 34, 0.95);
-                backdrop-filter: blur(8px);
-                border: 1px solid rgba(48, 54, 61, 0.8);
-                border-radius: 10px;
-                color: #c9d1d9;
-                font-family: 'Inter', sans-serif;
-                font-size: 11px;
-                line-height: 1.5;
-                box-shadow: 0 8px 24px rgba(0,0,0,0.5);
-                max-width: 320px;
+                background-color: rgba(15, 23, 42, 0.96);
+                backdrop-filter: blur(12px);
+                border: 1px solid rgba(129, 140, 248, 0.28);
+                border-radius: 12px;
+                color: #e2e8f0;
+                font-family: 'DM Sans', system-ui, sans-serif;
+                font-size: 12px;
+                line-height: 1.55;
+                box-shadow: 0 12px 32px rgba(0,0,0,0.55);
+                max-width: 340px;
             }}
         </style>
     </head>
@@ -685,14 +1097,14 @@ def render_network_graph(contradictions_dict):
         var options = {{
             nodes: {{
                 shape: 'dot',
-                size: 16,
-                font: {{ color: '#c9d1d9', size: 11, face: 'Inter, sans-serif' }},
+                size: 18,
+                font: {{ color: '#e2e8f0', size: 12, face: 'DM Sans, sans-serif' }},
                 borderWidth: 2,
-                shadow: {{ enabled: true, color: 'rgba(0,0,0,0.5)', size: 10, x: 0, y: 4 }}
+                shadow: {{ enabled: true, color: 'rgba(99,102,241,0.35)', size: 14, x: 0, y: 4 }}
             }},
             edges: {{
-                arrows: {{ to: {{ enabled: true, scaleFactor: 0.5 }} }},
-                font: {{ align: 'middle' }},
+                arrows: {{ to: {{ enabled: true, scaleFactor: 0.55 }} }},
+                font: {{ align: 'middle', face: 'DM Sans, sans-serif', size: 10, color: '#94a3b8' }},
                 smooth: {{ type: 'cubicBezier', forceDirection: 'none', roundness: 0.4 }}
             }},
             physics: {{
@@ -707,7 +1119,7 @@ def render_network_graph(contradictions_dict):
     """
     import streamlit.components.v1 as components
     st.markdown("##### 🌐 Visual Claim Dispute Map")
-    components.html(html_content, height=410)
+    components.html(html_content, height=430)
 
 def audit_methodology(row):
     """Audit the paper's abstract, title, and metadata for methodology bias risks."""
@@ -935,23 +1347,36 @@ st.session_state["reasoning_mode"] = llm_reasoning_mode
 
 st.sidebar.markdown("---")
 
-st.title("🧬 Griffin Bio Dashboard")
-st.caption("Scientific evidence synthesis, contradiction detection, and research exploration")
+st.markdown("""
+<div style="margin-bottom: 1.75rem; animation: fadeInUp 0.55s cubic-bezier(0.22,1,0.36,1) both;">
+  <div style="display:inline-flex;align-items:center;gap:10px;padding:6px 14px;border-radius:999px;
+              border:1px solid rgba(129,140,248,0.35);background:rgba(99,102,241,0.12);
+              color:#c7d2fe;font-size:0.78rem;font-weight:600;letter-spacing:0.06em;
+              text-transform:uppercase;margin-bottom:14px;">
+    <span style="width:7px;height:7px;border-radius:50%;background:#818cf8;
+                 box-shadow:0 0 10px #818cf8;display:inline-block;"></span>
+    Multi-Agent Scientific Workbench
+  </div>
+</div>
+""", unsafe_allow_html=True)
 
-# 2. Main Tabs
+st.title("🧬 Griffin Bio Dashboard")
+st.caption("Scientific evidence synthesis · contradiction detection · research exploration")
+
+# 2. Main Tabs — pill-style with larger hit targets
 tabs = st.tabs([
-    "🧭 Query Planner",
-    "📝 Scientific Synthesis",
-    "⚡ Contradictions & Agreements",
-    "📚 Ranked Clinical Evidence",
-    "🔎 Claims Exploration",
-    "🤖 RAG Performance Comparison",
-    "🧐 Grounded Overseer Report",
+    "🧭  Query Planner",
+    "📝  Synthesis",
+    "⚡  Contradictions",
+    "📚  Evidence",
+    "🔎  Claims",
+    "🤖  RAG Benchmark",
+    "🧐  Overseer",
 ])
 
 with tabs[0]:
     st.markdown("### 🧭 Query Planner")
-    st.caption("Enter a question and see the full workflow from query to verification before generating an answer.")
+    st.caption("Enter a question and walk the full workflow from query → verification before generating an answer.")
 
     layer_palette = {
         "input": {"border": "#7C3AED", "bg": "#151026", "text": "#E9D5FF"},
@@ -966,16 +1391,16 @@ with tabs[0]:
     }
 
     st.markdown(
-        "<div style='display:flex;flex-wrap:wrap;gap:8px 10px;margin-bottom:14px;'>"
-        "<span style='padding:4px 10px;border-radius:999px;border:1px solid #7C3AED;color:#E9D5FF;'>Input</span>"
-        "<span style='padding:4px 10px;border-radius:999px;border:1px solid #0EA5E9;color:#BAE6FD;'>Orchestration</span>"
-        "<span style='padding:4px 10px;border-radius:999px;border:1px solid #22C55E;color:#BBF7D0;'>Retrieval</span>"
-        "<span style='padding:4px 10px;border-radius:999px;border:1px solid #F59E0B;color:#FDE68A;'>Collector</span>"
-        "<span style='padding:4px 10px;border-radius:999px;border:1px solid #14B8A6;color:#99F6E4;'>Processing</span>"
-        "<span style='padding:4px 10px;border-radius:999px;border:1px solid #3B82F6;color:#BFDBFE;'>Indexing</span>"
-        "<span style='padding:4px 10px;border-radius:999px;border:1px solid #F97316;color:#FDBA74;'>Execution</span>"
-        "<span style='padding:4px 10px;border-radius:999px;border:1px solid #EF4444;color:#FECACA;'>Analysis</span>"
-        "<span style='padding:4px 10px;border-radius:999px;border:1px solid #A855F7;color:#E9D5FF;'>Output</span>"
+        "<div style='display:flex;flex-wrap:wrap;gap:10px 12px;margin:6px 0 22px;'>"
+        "<span class='gx-chip' style='animation-delay:0.02s;border-color:#7C3AED;color:#E9D5FF;background:rgba(124,58,237,0.12);'>Input</span>"
+        "<span class='gx-chip' style='animation-delay:0.06s;border-color:#0EA5E9;color:#BAE6FD;background:rgba(14,165,233,0.12);'>Orchestration</span>"
+        "<span class='gx-chip' style='animation-delay:0.10s;border-color:#22C55E;color:#BBF7D0;background:rgba(34,197,94,0.12);'>Retrieval</span>"
+        "<span class='gx-chip' style='animation-delay:0.14s;border-color:#F59E0B;color:#FDE68A;background:rgba(245,158,11,0.12);'>Collector</span>"
+        "<span class='gx-chip' style='animation-delay:0.18s;border-color:#14B8A6;color:#99F6E4;background:rgba(20,184,166,0.12);'>Processing</span>"
+        "<span class='gx-chip' style='animation-delay:0.22s;border-color:#3B82F6;color:#BFDBFE;background:rgba(59,130,246,0.12);'>Indexing</span>"
+        "<span class='gx-chip' style='animation-delay:0.26s;border-color:#F97316;color:#FDBA74;background:rgba(249,115,22,0.12);'>Execution</span>"
+        "<span class='gx-chip' style='animation-delay:0.30s;border-color:#EF4444;color:#FECACA;background:rgba(239,68,68,0.12);'>Analysis</span>"
+        "<span class='gx-chip' style='animation-delay:0.34s;border-color:#A855F7;color:#E9D5FF;background:rgba(168,85,247,0.12);'>Output</span>"
         "</div>",
         unsafe_allow_html=True,
     )
@@ -983,8 +1408,9 @@ with tabs[0]:
     planner_query = st.text_area(
         "Query to plan:",
         value="",
-        height=90,
+        height=110,
         key="planner_query_input",
+        placeholder="e.g. Does metformin reduce breast cancer recurrence in diabetic patients?",
     )
     if use_global_model:
         planner_model = global_model_choice
@@ -1408,9 +1834,9 @@ with tabs[3]:
                 # Render badges
                 if flags:
                     badge_html = " ".join([
-                        f"<span style='background-color:#2a1c0b;color:#f59e0b;border:1px solid #f59e0b;padding:3px 8px;border-radius:6px;font-size:0.8rem;margin-right:6px;display:inline-block;margin-bottom:4px;'>{f}</span>"
+                        f"<span class='badge' style='background:rgba(245,158,11,0.12);color:#fbbf24;border-color:rgba(245,158,11,0.45);margin:0 6px 6px 0;'>{f}</span>"
                         if "⚠️" in f or "❓" in f else
-                        f"<span style='background-color:#112015;color:#10b981;border:1px solid #10b981;padding:3px 8px;border-radius:6px;font-size:0.8rem;margin-right:6px;display:inline-block;margin-bottom:4px;'>{f}</span>"
+                        f"<span class='badge' style='background:rgba(52,211,153,0.12);color:#34d399;border-color:rgba(52,211,153,0.45);margin:0 6px 6px 0;'>{f}</span>"
                         for f in flags
                     ])
                     st.markdown(f"**Methodological Audit**: {badge_html}", unsafe_allow_html=True)
@@ -1487,7 +1913,10 @@ with tabs[5]:
             ans_col1, ans_col2 = st.columns(2)
             
             with ans_col1:
-                st.markdown('<div class="card" style="border-left: 4px solid #8b949e !important; padding: 20px; margin-bottom: 20px;">', unsafe_allow_html=True)
+                st.markdown(
+                    '<div class="card" style="border-left: 4px solid #94a3b8 !important; padding: 22px 24px; margin-bottom: 20px; animation-delay:0.05s;">',
+                    unsafe_allow_html=True,
+                )
                 st.markdown("### 📋 Standard Vector RAG")
                 st.markdown(std_answer)
                 st.markdown("</div>", unsafe_allow_html=True)
@@ -1511,7 +1940,10 @@ with tabs[5]:
                             st.markdown("---")
                             
             with ans_col2:
-                st.markdown('<div class="card" style="border-left: 4px solid #58A6FF !important; box-shadow: 0 4px 25px rgba(59, 130, 246, 0.2) !important; padding: 20px; margin-bottom: 20px;">', unsafe_allow_html=True)
+                st.markdown(
+                    '<div class="card" style="border-left: 4px solid #818cf8 !important; box-shadow: 0 8px 32px rgba(99, 102, 241, 0.22) !important; padding: 22px 24px; margin-bottom: 20px; animation-delay:0.12s;">',
+                    unsafe_allow_html=True,
+                )
                 st.markdown("### 🕸️ Relationship-Traversing Graph RAG")
                 st.markdown(graph_answer)
                 st.markdown("</div>", unsafe_allow_html=True)
