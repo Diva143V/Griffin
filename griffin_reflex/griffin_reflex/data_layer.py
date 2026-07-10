@@ -150,6 +150,11 @@ def get_papers(limit: int = 24, search: str = "") -> List[Dict[str, str]]:
         score = r.get("evidence_score", r.get("score", ""))
         year = r.get("year", r.get("publication_year", ""))
         journal = r.get("journal", r.get("source", r.get("venue", "Unknown")))
+        src = str(r.get("source", "") or journal or "")
+        url = str(r.get("url", r.get("link", r.get("doi", ""))) or "#")
+        if url and url != "#" and not url.startswith("http") and "doi" in (r.keys() if hasattr(r, "keys") else []):
+            # leave raw doi as-is; Open Analysis link still works as "#"
+            pass
         rows.append(
             {
                 "title": title[:200] if title else "Untitled",
@@ -157,7 +162,8 @@ def get_papers(limit: int = 24, search: str = "") -> List[Dict[str, str]]:
                 "year": str(year) if pd.notna(year) else "—",
                 "score": str(score) if pd.notna(score) else "—",
                 "abstract": abstract[:280] + ("…" if len(abstract) > 280 else ""),
-                "source": str(r.get("source", "") or ""),
+                "source": src[:80] if src else str(journal)[:80],
+                "url": url if url else "#",
             }
         )
         if len(rows) >= limit:

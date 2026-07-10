@@ -1,20 +1,22 @@
 import reflex as rx
 
 def discovery_card():
+    from griffin_reflex.griffin_reflex import State
     return rx.box(
         rx.vstack(
             rx.heading(
                 "New Scientific Discovery"
             ),
-            rx.text(
-                "Metformin response differs between tumour subtypes"
+            rx.cond(
+                State.consensus_report,
+                rx.text(State.consensus_report[:150] + "...", color="gray"),
+                rx.text("Run consensus analysis to generate discoveries.")
             ),
             rx.progress(
                 value=92
             ),
             rx.hstack(
-                rx.button("Accept"),
-                rx.button("Review")
+                rx.button("Open Report", on_click=rx.redirect("/reports")),
             )
         ),
         padding="25px",

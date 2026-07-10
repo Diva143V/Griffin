@@ -287,6 +287,7 @@ class State(rx.State):
     # Phase 5/6 State
     ranked_papers_data: list[dict[str, str]] = []
     min_evidence_score: int = 1
+    paper_search_query: str = ""
     
     claims_data: list[list[str]] = []
     claims_search: str = ""
@@ -484,6 +485,8 @@ class State(rx.State):
     @rx.event
     def set_min_evidence_score(self, val: list[int]): self.min_evidence_score = val[0]
     @rx.event
+    def set_paper_search_query(self, val: str): self.paper_search_query = val
+    @rx.event
     def set_claims_search(self, val: str): self.claims_search = val
     @rx.event
     def set_show_support(self, val: bool): self.show_support = val
@@ -507,6 +510,14 @@ class State(rx.State):
             try:
                 if float(row["score"]) < float(self.min_evidence_score): continue
             except Exception: pass
+            
+            if self.paper_search_query:
+                query = self.paper_search_query.lower()
+                title = str(row.get("title", "")).lower()
+                abstract = str(row.get("abstract", "")).lower()
+                if query not in title and query not in abstract:
+                    continue
+                    
             out.append(row)
         return out
 
@@ -521,6 +532,29 @@ class State(rx.State):
             if self.claims_search and self.claims_search.lower() not in row[1].lower(): continue
             res.append(row)
         return res
+        
+    @rx.var
+    def agent_statuses(self) -> list[dict[str, str]]:
+        return [
+            {"name": "Planner Agent", "status": "ACTIVE" if self.is_running else "IDLE", "color": "green" if self.is_running else "gray"},
+            {"name": "Synthesis Agent", "status": "ACTIVE" if self.is_synthesis_running else "IDLE", "color": "green" if self.is_synthesis_running else "gray"},
+            {"name": "Peer Review Agent", "status": "ACTIVE" if self.is_peer_review_running else "IDLE", "color": "green" if self.is_peer_review_running else "gray"},
+            {"name": "Contradiction Agent", "status": "ACTIVE" if self.is_contradiction_running else "IDLE", "color": "green" if self.is_contradiction_running else "gray"},
+            {"name": "Overseer Agent", "status": "ACTIVE" if self.is_overseer_running else "IDLE", "color": "green" if self.is_overseer_running else "gray"},
+            {"name": "QA Agent", "status": "ACTIVE" if self.is_qa_running else "IDLE", "color": "green" if self.is_qa_running else "gray"},
+            {"name": "Refinement Agent", "status": "ACTIVE" if self.is_refine_running else "IDLE", "color": "green" if self.is_refine_running else "gray"},
+        ]
+
+    @rx.var
+    def timeline_events(self) -> list[dict[str, str]]:
+        events = []
+        for row in self.ranked_papers_data:
+            year = str(row.get("year", ""))
+            title = str(row.get("title", ""))
+            if year and year != "nan":
+                events.append({"year": year, "title": title[:70] + "..." if len(title) > 70 else title})
+        events.sort(key=lambda x: x["year"])
+        return events
         
     @rx.var
     def get_actual_model_routing(self) -> dict[str, str]:
@@ -827,7 +861,8 @@ class State(rx.State):
                         "source": str(row.get("source", "")),
                         "year": str(row.get("year", "")),
                         "flags": " ".join([f"🔴 {f}" if "⚠️" in f or "❓" in f else f"🟢 {f}" for f in flags]),
-                        "abstract": str(row.get("abstract", ""))
+                        "abstract": str(row.get("abstract", "")),
+                        "url": str(row.get("url", row.get("link", row.get("doi", "#"))) or "#"),
                     }
                     rows.append(r)
                 self.ranked_papers_data = rows
