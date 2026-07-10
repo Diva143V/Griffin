@@ -2,7 +2,7 @@ import sys
 import os
 import pandas as pd
 from sentence_transformers import SentenceTransformer
-from src.agents.query_planner import build_query_plan, execute_query_plan
+from src.agents.query_planner import build_query_plan, execute_query_plan, get_valid_model
 
 if __name__ == "__main__":
     if len(sys.argv) < 4:
@@ -19,7 +19,8 @@ if __name__ == "__main__":
         f.write(f"--- Starting CLI Ingestion for query: '{query}' ---\n")
     
     try:
-        plan = build_query_plan(query, "gemini-2.5-flash", default_top_k=10)
+        resolved, _ = get_valid_model("llama3.1:8b")
+        plan = build_query_plan(query, resolved, default_top_k=10)
         
         ranked_df = pd.DataFrame()
         claims_df = pd.DataFrame()
