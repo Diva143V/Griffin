@@ -1,20 +1,5 @@
 import reflex as rx
 
-PAPERS = [
-    {
-        "title": "Metformin and Breast Cancer Survival",
-        "journal": "Nature Medicine",
-        "year": 2024,
-        "score": 9
-    },
-    {
-        "title": "AMPK activation pathways",
-        "journal": "Cell",
-        "year": 2023,
-        "score": 8
-    }
-]
-
 def paper_card(p):
     return rx.box(
         rx.vstack(
@@ -23,18 +8,21 @@ def paper_card(p):
                 size="4"
             ),
             rx.text(
-                p["journal"]
+                p["source"]
             ),
             rx.hstack(
                 rx.badge(
-                    str(p["year"])
+                    p["year"]
                 ),
                 rx.badge(
                     f"Evidence {p['score']}/10"
                 )
             ),
-            rx.button(
-                "Open Analysis"
+            rx.link(
+                rx.button(
+                    "Open Analysis"
+                ),
+                href=p["url"] if "url" in p else "#"
             )
         ),
         padding="25px",
@@ -43,19 +31,21 @@ def paper_card(p):
     )
 
 def paper_explorer():
+    from griffin_reflex.griffin_reflex import State
     return rx.vstack(
         rx.heading(
             "Scientific Literature Explorer",
             size="7"
         ),
         rx.input(
-            placeholder="Search papers..."
+            placeholder="Search papers...",
+            on_change=State.set_paper_search_query
         ),
         rx.grid(
-            *[
-                paper_card(p)
-                for p in PAPERS
-            ],
+            rx.foreach(
+                State.filtered_ranked_papers,
+                paper_card
+            ),
             columns="3",
             spacing="5"
         )

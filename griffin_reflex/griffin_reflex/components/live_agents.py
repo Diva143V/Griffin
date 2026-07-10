@@ -1,18 +1,11 @@
 import reflex as rx
 
-class AgentState(rx.State):
-    logs: list[str] = [
-        "Planner started",
-        "Searching literature",
-        "Ranking evidence",
-        "Generating synthesis"
-    ]
-
 def live_agents():
+    from griffin_reflex.griffin_reflex import State
     return rx.vstack(
         rx.heading("Live AI Scientists Execution Stream", size="5"),
         rx.foreach(
-            AgentState.logs,
+            State.logs,
             lambda log:
             rx.box(
                 rx.text(log, size="2", font_family="monospace"),

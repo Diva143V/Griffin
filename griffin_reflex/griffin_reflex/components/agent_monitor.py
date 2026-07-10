@@ -1,27 +1,20 @@
 import reflex as rx
 
 def agent_monitor():
-    agents = [
-        ("Planner Agent", "IDLE", "gray"),
-        ("Retrieval Agent", "ACTIVE", "green"),
-        ("Evidence Agent", "ACTIVE", "green"),
-        ("Reasoning Agent", "WAITING", "yellow"),
-        ("Hypothesis Agent", "IDLE", "gray"),
-        ("Scientific Writer", "IDLE", "gray")
-    ]
+    from griffin_reflex.griffin_reflex import State
     return rx.box(
         rx.vstack(
             rx.heading("Agent Status Monitor", size="5"),
-            *[
-                rx.hstack(
-                    rx.text(name, weight="medium"),
+            rx.foreach(
+                State.agent_statuses,
+                lambda agent: rx.hstack(
+                    rx.text(agent["name"], weight="medium"),
                     rx.spacer(),
-                    rx.badge(status, color_scheme=color, variant="solid"),
+                    rx.badge(agent["status"], color_scheme=agent["color"], variant="solid"),
                     width="100%",
                     align_items="center"
                 )
-                for name, status, color in agents
-            ],
+            ),
             spacing="3",
             width="100%"
         ),

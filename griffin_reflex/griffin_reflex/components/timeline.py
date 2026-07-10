@@ -1,30 +1,24 @@
 import reflex as rx
 
-EVENTS = [
-    ("2015", "Metformin linked with cancer metabolism"),
-    ("2019", "Clinical studies show mixed results"),
-    ("2022", "Large cohort analysis contradicts earlier findings"),
-    ("2025", "Meta analysis suggests patient subgroup effects")
-]
-
 def research_timeline():
+    from griffin_reflex.griffin_reflex import State
     return rx.vstack(
         rx.heading(
             "Research Evolution Timeline",
             size="7"
         ),
-        *[
-            rx.hstack(
+        rx.foreach(
+            State.timeline_events,
+            lambda event: rx.hstack(
                 rx.badge(
-                    event[0],
+                    event["year"],
                     size="3"
                 ),
                 rx.text(
-                    event[1]
+                    event["title"]
                 ),
                 spacing="5"
             )
-            for event in EVENTS
-        ],
+        ),
         spacing="5"
     )
