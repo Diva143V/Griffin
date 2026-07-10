@@ -42,12 +42,14 @@ def collect(query: str, page_size: int = 100, max_pages: int = 10, rate_limit_se
                 "pmid": item.get("pmid", ""),
                 "source": "PMC",
             })
+            if len(papers) >= page_size:
+                break
 
         # respect rate limit
         time.sleep(rate_limit_sec)
 
-        # stop early if fewer results than page_size
-        if len(results) < page_size:
+        # stop early if we hit limit or fewer results than page_size
+        if len(papers) >= page_size or len(results) < page_size:
             break
 
     df = pd.DataFrame(papers)

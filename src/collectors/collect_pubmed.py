@@ -39,6 +39,13 @@ def collect(query: str, email: str, batch_size: int = 100, rate_limit_sec: float
                     "pmid": paper.get("PMID", ""),
                     "source": "PubMed",
                 })
+                
+                # Stop if we hit the batch size (which we use as the hard limit)
+                if len(papers) >= batch_size:
+                    break
+            
+            if len(papers) >= batch_size:
+                break
 
             time.sleep(rate_limit_sec)
         except Exception as e:

@@ -2,6 +2,8 @@ import reflex as rx
 
 class OnboardingState(rx.State):
     research_goal: str = ""
+    def set_research_goal(self, value: str):
+        self.research_goal = value
     def start(self):
         return rx.redirect("/workspace")
 

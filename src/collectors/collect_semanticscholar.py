@@ -42,9 +42,15 @@ def collect(query: str, limit: int = 100, offset: int = 0, max_pages: int | None
                 "paperId": item.get("paperId", ""),
                 "source": "SemanticScholar",
             })
+            if len(papers) >= limit:
+                break
 
         offset += limit
         page_count += 1
+
+        if len(papers) >= limit:
+            print(f"Reached custom limit of {limit}; stopping.")
+            break
 
         if max_pages is not None and page_count >= max_pages:
             print(f"Reached max_pages={max_pages}; stopping.")
