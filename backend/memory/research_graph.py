@@ -1,3 +1,6 @@
+from typing import Any, List
+
+
 class ResearchMemory:
     def __init__(self):
         self.graph = {}
@@ -7,5 +10,5 @@ class ResearchMemory:
             self.graph[node_type] = []
         self.graph[node_type].append(value)
 
-    def search(self, node_type: str) -> list:
+    def search(self, node_type: str) -> List:
         return self.graph.get(node_type, [])
