@@ -387,6 +387,30 @@ class State(rx.State):
         try: self.collector_limits["OpenAlex"] = int(val)
         except: pass
     @rx.event
+    def set_limit_clinicaltrials(self, val: str):
+        try: self.collector_limits["ClinicalTrials"] = int(val)
+        except: pass
+    @rx.event
+    def set_limit_biorxiv(self, val: str):
+        try: self.collector_limits["bioRxiv"] = int(val)
+        except: pass
+    @rx.event
+    def set_limit_chembl(self, val: str):
+        try: self.collector_limits["ChEMBL"] = int(val)
+        except: pass
+    @rx.event
+    def set_limit_uniprot(self, val: str):
+        try: self.collector_limits["UniProt"] = int(val)
+        except: pass
+    @rx.event
+    def set_limit_pubchem(self, val: str):
+        try: self.collector_limits["PubChem"] = int(val)
+        except: pass
+    @rx.event
+    def set_limit_dbsnp(self, val: str):
+        try: self.collector_limits["dbSNP"] = int(val)
+        except: pass
+    @rx.event
     def set_force_fresh(self, val: bool): self.force_fresh = val
     @rx.event
     def set_use_manual_agents(self, val: bool): self.use_manual_agents = val
@@ -807,8 +831,14 @@ def tab0_content():
             rx.vstack(rx.text("PMC"), rx.input(type="number", default_value="20", on_change=State.set_limit_pmc)),
             rx.vstack(rx.text("SemanticScholar"), rx.input(type="number", default_value="20", on_change=State.set_limit_semanticscholar)),
             rx.vstack(rx.text("OpenAlex"), rx.input(type="number", default_value="20", on_change=State.set_limit_openalex)),
-
-            wrap="wrap"
+            rx.vstack(rx.text("ClinicalTrials"), rx.input(type="number", default_value="20", on_change=State.set_limit_clinicaltrials)),
+            rx.vstack(rx.text("bioRxiv"), rx.input(type="number", default_value="20", on_change=State.set_limit_biorxiv)),
+            rx.vstack(rx.text("ChEMBL"), rx.input(type="number", default_value="20", on_change=State.set_limit_chembl)),
+            rx.vstack(rx.text("UniProt"), rx.input(type="number", default_value="20", on_change=State.set_limit_uniprot)),
+            rx.vstack(rx.text("PubChem"), rx.input(type="number", default_value="20", on_change=State.set_limit_pubchem)),
+            rx.vstack(rx.text("dbSNP"), rx.input(type="number", default_value="20", on_change=State.set_limit_dbsnp)),
+            wrap="wrap",
+            spacing="4"
         ),
         
         rx.text("🔬 Select Synthesis Components & Agent Targets:", weight="bold"),
