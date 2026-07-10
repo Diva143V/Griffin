@@ -252,6 +252,10 @@ class State(rx.State):
     show_confirm_dialog: bool = False
     force_fresh: bool = False
     use_manual_agents: bool = False
+    
+    extracted_intent: str = ""
+    is_extracting_intent: bool = False
+    
     sel_claim_extractor: bool = True
     sel_consensus: bool = True
     sel_evidence: bool = True
@@ -610,7 +614,20 @@ class State(rx.State):
         if not self.query:
             self.logs = ["Error: Please enter a query first."]
             return
+            
+        self.is_extracting_intent = True
+        yield
+        
+        loop = asyncio.get_running_loop()
+        from src.agents.query_planner import clean_search_query
+        # Use the planner model for extraction to match backend behavior
+        model = self.get_actual_model_routing.get("planner", "llama3.1:8b")
+        intent = await loop.run_in_executor(None, clean_search_query, self.query, model)
+        self.extracted_intent = intent
+        
+        self.is_extracting_intent = False
         self.show_confirm_dialog = True
+        yield
         
     async def run_query_planner(self):
         self.show_confirm_dialog = False
@@ -720,7 +737,8 @@ class State(rx.State):
                 self.pipeline_trace_visible = True
             except Exception as e:
                 self.logs.append(f"Failed to load execution trace: {e}")
-        yield
+        yield DashboardState.load_metrics
+        yield WorkspaceState.load_workspace
         
     def execute_backend_pipeline(self):
         import subprocess
@@ -1327,13 +1345,15 @@ def tab0_content():
                 style={"background": "rgba(99,102,241,0.08)", "border": "1px solid rgba(129,140,248,0.2)"},
             ),
         ),
-        rx.button("Run Planned Query", on_click=State.prepare_query_planner, loading=State.is_running, **_btn_primary, margin_top="3"),
+        rx.button("Run Planned Query", on_click=State.prepare_query_planner, loading=State.is_running | State.is_extracting_intent, **_btn_primary, margin_top="3"),
         rx.dialog.root(
             rx.dialog.content(
                 rx.dialog.title("🧬 Verify Research Intent & Routing", style={"fontFamily": _FONT_DISPLAY}),
                 rx.dialog.description(
                     rx.vstack(
-                        rx.text("Does this match what you intended to search? You can refine the query below:", size="2"),
+                        rx.text("Extracted Search Intent:", size="2", weight="bold"),
+                        rx.text(State.extracted_intent, size="3", color="var(--indigo-11)", style={"background": "var(--indigo-3)", "padding": "0.5rem", "borderRadius": "8px", "fontFamily": _FONT_MONO, "width": "100%"}),
+                        rx.text("Does this match what you intended to search? You can refine the query below:", size="2", margin_top="2"),
                         rx.input(
                             placeholder="Refinement (e.g. focus on clinical evidence)",
                             value=State.refinement_instruction,
@@ -1409,7 +1429,7 @@ def tab0_content():
                                     spacing="2",
                                 ),
                                 rx.foreach(
-                                    step["findings"],
+                                    step["findings"].to(list[str]),
                                     lambda f: rx.text(f"• {f}", size="2", color="var(--gray-11)"),
                                 ),
                                 padding="3",
