@@ -1,17 +1,19 @@
 import sys
 import os
+import json
 import pandas as pd
 from sentence_transformers import SentenceTransformer
 from src.agents.query_planner import build_query_plan, execute_query_plan, get_valid_model
 
 if __name__ == "__main__":
     if len(sys.argv) < 4:
-        print("Usage: python run_pipeline_cli.py <query> <email> <api_key>")
+        print("Usage: python run_pipeline_cli.py <query> <email> <api_key> [sc_api_key]")
         sys.exit(1)
         
     query = sys.argv[1]
     email = sys.argv[2]
     api_key = sys.argv[3]
+    sc_api_key = sys.argv[4] if len(sys.argv) > 4 else ""
     
     # Initialize terminal.log to empty
     os.makedirs("dataset", exist_ok=True)
@@ -19,7 +21,40 @@ if __name__ == "__main__":
         f.write(f"--- Starting CLI Ingestion for query: '{query}' ---\n")
     
     try:
-        resolved, _ = get_valid_model("llama3.1:8b")
+        # Read model routing from environment (set by Reflex UI) or use defaults
+        default_routing = {
+            "planner": "llama3.1:8b",
+            "claim_extractor": "llama3.1:8b",
+            "contradiction_detector": "qwen3.5:9b",
+            "consensus_analyst": "koesn/llama3-openbiollm-8b:latest",
+            "synthesis": "llama3.1:8b",
+            "experiment_planner": "llama3.1:8b"
+        }
+        
+        env_routing = os.environ.get("GRIFFIN_ROUTING", "")
+        if env_routing:
+            try:
+                model_routing = json.loads(env_routing)
+            except json.JSONDecodeError:
+                model_routing = default_routing
+        else:
+            model_routing = default_routing
+        
+        # Read LLM options from environment or use defaults
+        default_llm_opts = {"temperature": 0.7, "num_ctx": 8192, "think": True}
+        
+        env_llm_opts = os.environ.get("GRIFFIN_LLM_OPTS", "")
+        if env_llm_opts:
+            try:
+                llm_options = json.loads(env_llm_opts)
+            except json.JSONDecodeError:
+                llm_options = default_llm_opts
+        else:
+            llm_options = default_llm_opts
+        
+        # Resolve planner model with fallback
+        planner_model = model_routing.get("planner", "llama3.1:8b")
+        resolved, _ = get_valid_model(planner_model)
         plan = build_query_plan(query, resolved, default_top_k=10)
         
         ranked_df = pd.DataFrame()
@@ -28,20 +63,9 @@ if __name__ == "__main__":
         
         encoder_model = SentenceTransformer('all-MiniLM-L6-v2')
         
-        model_routing = {
-            "overseer": "gemini-2.5-flash",
-            "validation": "gemini-2.5-flash",
-            "refinement": "gemini-2.5-flash",
-            "peer_review": "gemini-2.5-flash",
-            "consensus": "gemini-2.5-flash",
-            "graph": "gemini-2.5-flash",
-            "planner": "gemini-2.5-flash",
-            "claim_extractor": "gemini-2.5-flash",
-            "contradiction_detector": "gemini-2.5-flash",
-            "consensus_analyst": "gemini-2.5-flash",
-            "synthesis": "gemini-2.5-flash",
-            "experiment_planner": "gemini-2.5-flash"
-        }
+        # Pass Semantic Scholar API key via environment if provided
+        if sc_api_key:
+            os.environ["SEMANTIC_SCHOLAR_API_KEY"] = sc_api_key
         
         execute_query_plan(
             plan=plan,
@@ -50,10 +74,12 @@ if __name__ == "__main__":
             claims_df=claims_df,
             contradictions=contradictions,
             email=email,
-            api_key=api_key,
+            api_key=sc_api_key or api_key,
             force_fresh=True,
-            model_routing=model_routing
+            model_routing=model_routing,
+            llm_options=llm_options
         )
     except Exception as e:
         with open("dataset/terminal.log", "a", encoding="utf-8") as f:
             f.write(f"\nPipeline Error: {str(e)}\n")
+

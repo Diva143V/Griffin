@@ -17,50 +17,7 @@ from typing import Any, Optional
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 DATASET_DIR = os.path.join(ROOT_DIR, "dataset")
 
-def format_reasoning_text(text: str, mode: str) -> str:
-    import re
-    if not text: return ""
-    think_match = re.search(r'<think>(.*?)</think>', text, re.DOTALL)
-    if think_match:
-        think_content = think_match.group(1).strip()
-        clean_text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
-        if mode == "Display in Expander":
-            return f"**💭 Reasoning Chain:**\n```\n{think_content}\n```\n\n{clean_text}"
-        elif mode == "Strip Completely":
-            return clean_text
-        else:
-            return text
-    return text
-
-def parse_embedding(value):
-    if isinstance(value, list): return np.asarray(value, dtype=np.float32)
-    if isinstance(value, str):
-        try: return np.asarray(json.loads(value), dtype=np.float32)
-        except Exception:
-            try: return np.asarray(ast.literal_eval(value), dtype=np.float32)
-            except Exception: pass
-    return np.asarray(value, dtype=np.float32)
-
-def audit_methodology(row):
-    flags = []
-    n = row.get("sample_size", 0)
-    try:
-        n = float(n)
-        if pd.isna(n) or n <= 0: flags.append("❓ Unreported Cohort Size")
-        elif n < 100: flags.append(f"⚠️ Low Statistical Power (N={int(n)})")
-    except Exception: flags.append("❓ Unreported Cohort Size")
-
-    design = str(row.get("study_design", "")).lower()
-    if "review" in design or "editorial" in design or "commentary" in design: flags.append("⚠️ Low Primary Evidence (Review/Commentary)")
-    elif "undetermined" in design or "default" in design: flags.append("❓ Unspecified Design Quality")
-        
-    abstract = str(row.get("abstract", "")).lower()
-    title = str(row.get("title", "")).lower()
-    if "retrospective" in abstract or "retrospective" in title: flags.append("⚠️ Retrospective Recall Bias")
-    if "open-label" in abstract or "open-label" in title: flags.append("⚠️ Open-Label Bias Risk")
-    if "uncontrolled" in abstract or "uncontrolled" in title: flags.append("⚠️ Uncontrolled Cohort")
-    if "pilot" in abstract or "pilot" in title: flags.append("ℹ️ Pilot Feasibility Study")
-    return flags
+from src.shared.ui_helpers import format_reasoning_text, parse_embedding, audit_methodology, get_ollama_model_names, get_gemini_model_names
 
 def _peer_review_sync(api_key, report, focus_area, gemini_model):
     from src.agents.peer_review_agent import run_peer_review
@@ -91,10 +48,7 @@ def _benchmark_sync(question, model_choice):
     import time
     from src.core import graph_rag
     from sentence_transformers import SentenceTransformer
-    ranked_path=os.path.join(DATASET_DIR,"clean_papers_with_embeddings.csv")
-    con_path=os.path.join(DATASET_DIR,"contradictions.json")
-    ranked_df=pd.read_csv(ranked_path) if os.path.exists(ranked_path) else pd.DataFrame()
-    contradictions=json.load(open(con_path)) if os.path.exists(con_path) else {}
+    ranked_df, contradictions = graph_rag.load_data()
     enc=SentenceTransformer('all-MiniLM-L6-v2')
     
     t=time.time()
@@ -221,43 +175,22 @@ def _ollama_generate_sync(prompt, model, options):
     res = ollama.chat(model=model, messages=messages, options=options)
     return res['message']['content']
 
-def _get_installed_models():
-    try:
-        import ollama
-        model_list = ollama.list()
-        names = []
-        if isinstance(model_list, dict) and "models" in model_list:
-            for m in model_list["models"]:
-                if isinstance(m, dict):
-                    if "model" in m: names.append(m["model"])
-                    elif "name" in m: names.append(m["name"])
-                elif hasattr(m, "model"): names.append(m.model)
-                elif hasattr(m, "name"): names.append(m.name)
-        elif hasattr(model_list, "models"):
-            names = [m.model for m in model_list.models]
-            
-        target = "gemma4:e4b"
-        if target not in names: names.append(target)
-        target_biollm = "koesn/llama3-openbiollm-8b:latest"
-        if target_biollm not in names: names.append(target_biollm)
-        if not names: return ["gemma4:e4b", "koesn/llama3-openbiollm-8b:latest", "llama3.1:8b", "gemma3:4b", "gemma3:1b", "qwen3.5:9b"]
-        return names
-    except Exception:
-        return ["gemma4:e4b", "koesn/llama3-openbiollm-8b:latest", "llama3.1:8b", "gemma3:4b", "gemma3:1b", "qwen3.5:9b"]
+from typing import Any, Optional
+from dataclasses import dataclass
 
-def _get_gemini_models(api_key):
-    if not api_key:
-        return ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-1.5-pro-latest", "gemini-1.5-flash-latest"]
-    try:
-        import google.generativeai as genai
-        genai.configure(api_key=api_key)
-        valid_models = []
-        for m in genai.list_models():
-            if 'generateContent' in m.supported_generation_methods:
-                valid_models.append(m.name.replace('models/', ''))
-        return valid_models if valid_models else ["gemini-1.5-pro", "gemini-1.5-flash"]
-    except Exception:
-        return ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-1.5-pro-latest", "gemini-1.5-flash-latest"]
+@dataclass
+class ChatSource:
+    index: int
+    title: str
+    similarity: float
+    evidence_score: float
+    abstract: str
+
+@dataclass
+class ChatMessage:
+    role: str
+    content: str
+    sources: list[ChatSource]
 
 class State(rx.State):
     """The app state."""
@@ -291,7 +224,7 @@ class State(rx.State):
     
     rag_model_choice: str = "llama3.1:8b"
     rag_chat_input: str = ""
-    chat_history: list[dict[str, Any]] = []
+    chat_history: list[ChatMessage] = []
     is_chat_running: bool = False
 
     # Tab 0 Settings
@@ -365,7 +298,7 @@ class State(rx.State):
     
     # Phase 7 State
     is_graph_running: bool = False
-    graph_figure: Any = None
+    graph_figure: go.Figure = go.Figure()
     
     # Trace output UI
     pipeline_trace_visible: bool = False
@@ -383,14 +316,14 @@ class State(rx.State):
     @rx.event
     async def on_load(self):
         loop=asyncio.get_running_loop()
-        self.installed_models = await loop.run_in_executor(None, _get_installed_models)
-        self.gemini_model_list = await loop.run_in_executor(None, _get_gemini_models, self.api_key)
+        self.installed_models = await loop.run_in_executor(None, get_ollama_model_names)
+        self.gemini_model_list = await loop.run_in_executor(None, get_gemini_model_names, self.api_key)
 
     @rx.event
     async def set_api_key(self, val: str): 
         self.api_key = val
         loop=asyncio.get_running_loop()
-        self.gemini_model_list = await loop.run_in_executor(None, _get_gemini_models, self.api_key)
+        self.gemini_model_list = await loop.run_in_executor(None, get_gemini_model_names, self.api_key)
         
     @rx.event
     def set_sc_api_key(self, val: str): self.sc_api_key = val
@@ -421,7 +354,7 @@ class State(rx.State):
     def set_route_experiment_planner(self, val: str): self.model_routing["experiment_planner"] = val
 
     @rx.event
-    def set_llm_temperature(self, val: float): self.llm_temperature = val
+    def set_llm_temperature(self, val: list[float]): self.llm_temperature = val[0]
     @rx.event
     def set_llm_num_ctx(self, val: str): self.llm_num_ctx = val
     @rx.event
@@ -437,6 +370,22 @@ class State(rx.State):
     
     @rx.event
     def set_collector_limit(self, k: str, val: int): self.collector_limits[k] = val
+    @rx.event
+    def set_limit_pubmed(self, val: str):
+        try: self.collector_limits["PubMed"] = int(val)
+        except: pass
+    @rx.event
+    def set_limit_pmc(self, val: str):
+        try: self.collector_limits["PMC"] = int(val)
+        except: pass
+    @rx.event
+    def set_limit_semanticscholar(self, val: str):
+        try: self.collector_limits["SemanticScholar"] = int(val)
+        except: pass
+    @rx.event
+    def set_limit_openalex(self, val: str):
+        try: self.collector_limits["OpenAlex"] = int(val)
+        except: pass
     @rx.event
     def set_force_fresh(self, val: bool): self.force_fresh = val
     @rx.event
@@ -522,7 +471,7 @@ class State(rx.State):
 
     async def run_rag_chat(self):
         if not self.rag_chat_input.strip(): return
-        msg = {"role": "user", "content": self.rag_chat_input, "sources": []}
+        msg = ChatMessage(role="user", content=self.rag_chat_input, sources=[])
         self.chat_history.append(msg)
         prompt = self.rag_chat_input
         self.rag_chat_input = ""
@@ -541,7 +490,8 @@ class State(rx.State):
         llm_opts = {"temperature": self.llm_temperature, "num_ctx": int(self.llm_num_ctx)}
         answer = await loop.run_in_executor(None, _ollama_generate_sync, full_prompt, self.rag_model_choice, llm_opts)
         
-        self.chat_history.append({"role": "assistant", "content": answer, "sources": retrieved_sources})
+        typed_sources = [ChatSource(**src) for src in retrieved_sources]
+        self.chat_history.append(ChatMessage(role="assistant", content=answer, sources=typed_sources))
         self.is_chat_running = False
         yield
 
@@ -821,15 +771,15 @@ def sidebar():
                     rx.vstack(
                         rx.foreach(State.chat_history, lambda msg: 
                             rx.box(
-                                rx.text(msg["role"], weight="bold", size="1"),
-                                rx.markdown(msg["content"]),
-                                rx.cond(msg["sources"].length() > 0,
+                                rx.text(msg.role, weight="bold", size="1"),
+                                rx.markdown(msg.content),
+                                rx.cond(msg.sources.length() > 0,
                                     rx.vstack(
                                         rx.text("Sources:", size="1", weight="bold"),
-                                        rx.foreach(msg["sources"], lambda src: rx.text(f"[{src['index']}] {src['title']}", size="1"))
+                                        rx.foreach(msg.sources, lambda src: rx.text(f"[{src.index}] {src.title}", size="1"))
                                     )
                                 ),
-                                bg=rx.cond(msg["role"] == "user", "var(--gray-3)", "var(--accent-3)"),
+                                bg=rx.cond(msg.role == "user", "var(--gray-3)", "var(--accent-3)"),
                                 padding="2", border_radius="md", width="100%"
                             )
                         )
@@ -853,10 +803,11 @@ def tab0_content():
         
         rx.text("📥 Max Papers to Fetch per Source:", weight="bold"),
         rx.hstack(
-            rx.vstack(rx.text("PubMed"), rx.input(type="number", default_value="20", on_change=lambda val: State.set_collector_limit("PubMed", int(val)))),
-            rx.vstack(rx.text("PMC"), rx.input(type="number", default_value="20", on_change=lambda val: State.set_collector_limit("PMC", int(val)))),
-            rx.vstack(rx.text("SemanticScholar"), rx.input(type="number", default_value="20", on_change=lambda val: State.set_collector_limit("SemanticScholar", int(val)))),
-            rx.vstack(rx.text("OpenAlex"), rx.input(type="number", default_value="20", on_change=lambda val: State.set_collector_limit("OpenAlex", int(val)))),
+            rx.vstack(rx.text("PubMed"), rx.input(type="number", default_value="20", on_change=State.set_limit_pubmed)),
+            rx.vstack(rx.text("PMC"), rx.input(type="number", default_value="20", on_change=State.set_limit_pmc)),
+            rx.vstack(rx.text("SemanticScholar"), rx.input(type="number", default_value="20", on_change=State.set_limit_semanticscholar)),
+            rx.vstack(rx.text("OpenAlex"), rx.input(type="number", default_value="20", on_change=State.set_limit_openalex)),
+
             wrap="wrap"
         ),
         

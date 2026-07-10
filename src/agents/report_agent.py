@@ -2,7 +2,6 @@ import os
 import json
 import pandas as pd
 from google import genai
-from google import genai
 
 def generate_overseer_report(api_key: str, consensus_report: str, eln_logs_or_df, custom_instructions_or_dict="", model_name: str = "gemini-1.5-pro") -> str:
     """
