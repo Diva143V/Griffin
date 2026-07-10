@@ -10,6 +10,12 @@ import pandas as pd
 import numpy as np
 import subprocess
 
+from griffin_reflex.pages.onboarding import onboarding
+from griffin_reflex.pages.workspace import workspace
+from griffin_reflex.pages.dashboard import dashboard
+from griffin_reflex.pages.projects import projects
+from griffin_reflex.pages.settings import settings
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 from typing import Any, Optional
@@ -1704,3 +1710,8 @@ app = rx.App(
     ],
 )
 app.add_page(index, title="Griffin Bio Reflex", on_load=State.on_load)
+app.add_page(onboarding, route="/onboarding", title="Griffin AI - Onboarding")
+app.add_page(workspace, route="/workspace", title="Griffin AI - Research Workspace")
+app.add_page(dashboard, route="/dashboard", title="Griffin AI - Dashboard")
+app.add_page(projects, route="/projects", title="Griffin AI - Labs")
+app.add_page(settings, route="/settings", title="Griffin AI - Configuration")
