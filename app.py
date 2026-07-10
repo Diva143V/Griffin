@@ -912,6 +912,12 @@ with st.sidebar.expander("Ollama Generation Options", expanded=True):
         key="llm_num_predict",
         help="Maximum number of tokens the model can generate. Higher values reduce truncation risk for long synthesis/consensus outputs."
     )
+    llm_think = st.toggle(
+        "Enable Thinking Mode (/set think)", 
+        value=True, 
+        key="llm_think",
+        help="Forces reasoning models (like gemma4:e4b or DeepSeek-R1) to execute systematic thinking chains. Disable this if you want faster, direct answers without reasoning steps."
+    )
     llm_reasoning_mode = st.selectbox(
         "Reasoning Log Output:",
         ["Display in Expander", "Strip Completely", "Raw Text"],

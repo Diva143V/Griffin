@@ -371,9 +371,13 @@ def load_evidence_scores(evidence_path: str) -> Dict[str, float]:
     scores: Dict[str, float] = {}
     for _, row in edf.iterrows():
         title = str(row["title"]).strip().lower()
-        score = float(row["evidence_score"])
-        if title:
+        if not title:
+            continue
+        try:
+            score = float(row["evidence_score"])
             scores[title] = score
+        except (ValueError, TypeError):
+            continue
 
     logger.info("Loaded %d evidence scores from %s", len(scores), evidence_path)
     return scores

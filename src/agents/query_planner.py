@@ -198,7 +198,7 @@ def run_pipeline_ingestion(query: str, email: str = "test@example.com", api_key:
     print(f"Running dynamic ingestion for query: '{search_query}'...")
     
     # Define sources based on whether SemanticScholar API key is available
-    sources = ["PMC", "OpenAlex", "ClinicalTrials", "bioRxiv", "ChEMBL", "UniProt", "PubChem", "dbSNP"]
+    sources = ["PubMed", "PMC", "OpenAlex", "ClinicalTrials", "bioRxiv", "ChEMBL", "UniProt", "PubChem", "dbSNP"]
     if api_key:
         sources.append("SemanticScholar")
         os.environ["SEMANTIC_SCHOLAR_API_KEY"] = api_key

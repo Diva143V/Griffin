@@ -225,6 +225,7 @@ class State(rx.State):
     llm_temperature: float = 0.7
     llm_num_ctx: str = "8192"
     llm_num_predict: str = "4096"
+    llm_think: bool = True
     llm_reasoning_mode: str = "Display in Expander"
     
     rag_model_choice: str = "llama3.1:8b"
@@ -364,6 +365,8 @@ class State(rx.State):
     def set_llm_num_ctx(self, val: str): self.llm_num_ctx = val
     @rx.event
     def set_llm_num_predict(self, val: str): self.llm_num_predict = val
+    @rx.event
+    def set_llm_think(self, val: bool): self.llm_think = val
     @rx.event
     def set_llm_reasoning_mode(self, val: str): self.llm_reasoning_mode = val
     @rx.event
@@ -795,6 +798,7 @@ def sidebar():
                     value=State.llm_num_predict,
                     on_change=State.set_llm_num_predict,
                 ),
+                rx.checkbox("Enable Thinking Mode (/set think)", checked=State.llm_think, on_change=State.set_llm_think),
                 rx.select(["Display in Expander", "Strip Completely", "Raw Text"], value=State.llm_reasoning_mode, on_change=State.set_llm_reasoning_mode),
                 
                 rx.divider(),
