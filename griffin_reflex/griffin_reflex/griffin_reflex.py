@@ -616,13 +616,15 @@ class State(rx.State):
             forced_agents = ",".join(fa)
             
         env = os.environ.copy()
+        env["PYTHONUNBUFFERED"] = "1"
         env["GRIFFIN_ROUTING"] = json.dumps(self.get_actual_model_routing)
         env["GRIFFIN_LLM_OPTS"] = json.dumps({"temperature": self.llm_temperature, "num_ctx": int(self.llm_num_ctx), "num_predict": int(self.llm_num_predict)})
         
         cmd = [sys.executable, cli_path, self.query, self.email, self.api_key, self.sc_api_key]
         
         try:
-            subprocess.run(cmd, cwd=root_dir, check=True, env=env)
+            with open(os.path.join(root_dir, "dataset", "terminal.log"), "a", encoding="utf-8") as log_file:
+                subprocess.run(cmd, cwd=root_dir, check=True, env=env, stdout=log_file, stderr=subprocess.STDOUT)
         except Exception as e:
             with open(os.path.join(root_dir, "dataset", "terminal.log"), "a", encoding="utf-8") as f:
                 f.write(f"\nPipeline Error: {str(e)}\n")
