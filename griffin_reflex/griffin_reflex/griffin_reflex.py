@@ -170,10 +170,15 @@ def _rag_chat_sync(user_input):
     return retrieved_sources
 
 def _ollama_generate_sync(prompt, model, options):
-    import ollama
+    from src.shared.llm import chat as llm_chat
     messages = [{"role": "user", "content": prompt}]
-    res = ollama.chat(model=model, messages=messages, options=options)
-    return res['message']['content']
+    res = llm_chat(
+        model,
+        messages=messages,
+        task="chat",
+        user_options=options,
+    )
+    return res["message"]["content"]
 
 from typing import Any, Optional
 from dataclasses import dataclass

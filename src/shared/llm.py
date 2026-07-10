@@ -33,12 +33,14 @@ def resolve_options(
     """Merge task preset < user sidebar overrides < explicit per-call options."""
     base: Dict[str, Any] = dict(TASK_PRESETS.get(task or "chat"))
     if user_overrides:
-        for k in ("temperature", "num_ctx", "top_p"):
+        for k in ("temperature", "num_ctx", "top_p", "num_predict"):
             v = user_overrides.get(k)
             if v is not None:
                 base[k] = v
+
     if options:
         base.update(options)
+
     base.pop("think", None)        # 'think' is NOT a valid option
     base.setdefault("num_predict", 4096)
     return base

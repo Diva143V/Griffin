@@ -132,7 +132,7 @@ def get_ollama_model_names() -> List[str]:
 
 def get_gemini_model_names(api_key: str) -> List[str]:
     """Fetch available Gemini models from Google API."""
-    default = ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-1.5-pro-latest", "gemini-1.5-flash-latest"]
+    default = ["gemini-2.5-flash", "gemini-2.5-pro"]
     if not api_key:
         return default
     try:

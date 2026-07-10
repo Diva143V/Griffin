@@ -10,22 +10,12 @@ def _nli_classifier():
     """Lazy-load the NLI classifier once and reuse it across all verifications."""
     from transformers import pipeline
     import torch
-    try:
-        return pipeline(
-            "text-classification",
-            model="MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli",
-            device=0 if torch.cuda.is_available() else -1,
-            top_k=None,
-            truncation=True,
-        )
-    except Exception:
-        return pipeline(
-            "text-classification",
-            model="microsoft/deberta-v3-base-mnli",
-            device=-1,
-            top_k=None,
-            truncation=True,
-        )
+
+    return pipeline(
+        "zero-shot-classification",
+        model="microsoft/deberta-v3-base-mnli",
+        device=0 if torch.cuda.is_available() else -1,
+    )
 
 
 def verify_response(answer: str, sources: List[Dict[str, Any]], relations: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -86,10 +76,14 @@ def verify_response(answer: str, sources: List[Dict[str, Any]], relations: List[
                 source_concat = " ".join([s.get("abstract", "") for s in sources])[:2000] # Trim for context window
                 # Check entailment for a subset of sentences to save time
                 for sent in sentences[:3]:
-                    result = classifier(sent, candidate_labels=["entailment", "contradiction", "neutral"], hypothesis_template="This text implies that {}")
+                    result = classifier(
+                        sent,
+                        candidate_labels=["entailment", "contradiction", "neutral"],
+                        hypothesis_template="This text implies that {}"
+                    )
                     if result["labels"][0] == "contradiction":
                         findings.append(f"Possible hallucination/contradiction detected: '{sent}'")
-    except ImportError:
+    except Exception:
         pass
 
     # Pass if no flags/warnings were raised

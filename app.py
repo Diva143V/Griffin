@@ -7,6 +7,7 @@ import numpy as np
 import streamlit as st
 import ollama
 from sentence_transformers import SentenceTransformer
+from src.shared.llm import chat as llm_chat
 from src.core import graph_rag
 from src.agents.query_planner import build_query_plan, execute_query_plan, plan_to_dict
 from src.agents.report_agent import generate_overseer_report
@@ -775,18 +776,28 @@ google_api_key = st.sidebar.text_input(
 
 @st.cache_data(show_spinner=False, ttl=300)
 def get_gemini_models(api_key):
+    fallback_models = ["gemini-2.5-flash", "gemini-2.5-pro"]
+
     if not api_key:
-        return ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-1.5-pro-latest", "gemini-1.5-flash-latest"]
+        return fallback_models
+
     try:
         import google.generativeai as genai
         genai.configure(api_key=api_key)
+
         valid_models = []
         for m in genai.list_models():
-            if 'generateContent' in m.supported_generation_methods:
-                valid_models.append(m.name.replace('models/', ''))
-        return valid_models if valid_models else ["gemini-1.5-pro", "gemini-1.5-flash"]
+            if "generateContent" in m.supported_generation_methods:
+                valid_models.append(m.name.replace("models/", ""))
+
+        # Prefer current Gemini 2.5 models at the top if available.
+        preferred = [m for m in ["gemini-2.5-flash", "gemini-2.5-pro"] if m in valid_models]
+        remaining = [m for m in valid_models if m not in preferred]
+
+        return preferred + remaining if valid_models else fallback_models
+
     except Exception:
-        return ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-1.5-pro-latest", "gemini-1.5-flash-latest"]
+        return fallback_models
 
 gemini_model_list = get_gemini_models(google_api_key)
 gemini_model_choice = st.sidebar.selectbox(
@@ -894,24 +905,25 @@ with st.sidebar.expander("Ollama Generation Options", expanded=True):
         key="llm_num_ctx",
         help="Determines the size of the memory window (in tokens) assigned to the model. Larger context sizes allow the agent to evaluate more papers simultaneously but require more system RAM/VRAM."
     )
-    llm_think = st.toggle(
-        "Enable Thinking Mode (/set think)", 
-        value=True, 
-        key="llm_think",
-        help="Forces reasoning models (like gemma4:e4b or DeepSeek-R1) to execute systematic thinking chains. Disable this if you want faster, direct answers without reasoning steps."
+    llm_num_predict = st.select_slider(
+        "Max output tokens (num_predict):",
+        options=[1024, 2048, 4096, 8192],
+        value=4096,
+        key="llm_num_predict",
+        help="Maximum number of tokens the model can generate. Higher values reduce truncation risk for long synthesis/consensus outputs."
     )
     llm_reasoning_mode = st.selectbox(
         "Reasoning Log Output:",
         ["Display in Expander", "Strip Completely", "Raw Text"],
         index=0,
         key="llm_reasoning_mode",
-        help="Governs how the generated <think> tags are displayed in the dashboard: place them in a collapsible box, hide them completely for clean synthesis, or print them raw."
+        help="Governs how generated <think> tags are displayed in the dashboard: place them in a collapsible box, hide them completely for clean synthesis, or print them raw."
     )
 
 st.session_state["llm_options"] = {
     "temperature": llm_temp,
     "num_ctx": llm_num_ctx,
-    "think": llm_think
+    "num_predict": llm_num_predict,
 }
 st.session_state["reasoning_mode"] = llm_reasoning_mode
 
@@ -1634,7 +1646,12 @@ Please provide a structured, concise response. When answering using the dataset 
 """
     try:
         def run_chat_query(model, messages):
-            return ollama.chat(model=model, messages=messages)
+            return llm_chat(
+                model,
+                messages=messages,
+                task="chat",
+                user_options=st.session_state.get("llm_options"),
+            )
             
         response = run_with_stop_button(
             run_chat_query,
