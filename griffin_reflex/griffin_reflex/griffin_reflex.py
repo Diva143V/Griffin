@@ -48,7 +48,11 @@ def _benchmark_sync(question, model_choice):
     import time
     from src.core import graph_rag
     from sentence_transformers import SentenceTransformer
-    ranked_df, contradictions = graph_rag.load_data()
+    ranked_df, contradictions = graph_rag.load_data(
+        ranked_path=os.path.join(DATASET_DIR, "ranked_papers.csv"),
+        embeddings_path=os.path.join(DATASET_DIR, "clean_papers_with_embeddings.csv"),
+        contradictions_path=os.path.join(DATASET_DIR, "contradictions.json")
+    )
     enc=SentenceTransformer('BAAI/bge-small-en-v1.5')
     
     t=time.time()
