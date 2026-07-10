@@ -17,21 +17,32 @@ def verify_response(answer: str, sources: List[Dict[str, Any]], relations: List[
     if not sources:
         findings.append("No sources were retrieved.")
     else:
-        # Check for citation footprints in text (e.g., [1], [Source Paper 1], [Source 1])
-        citation_matches = re.findall(r'\[(?:Source Paper\s+|Source\s+|Paper\s+)?(\d+)\]', answer_text)
+        # Check for citation footprints in text (e.g., [1], [Source Paper 1], [Source 1], [1, 2], [1-3])
+        citation_blocks = re.findall(r'\[(?:Source Paper\s+|Source\s+|Paper\s+)?([\d\s,\-]+)\]', answer_text)
         
-        if not citation_matches:
+        if not citation_blocks:
             findings.append("No numerical citations found in the synthesis text (e.g., [1] or [Source Paper 1]).")
         else:
             total_sources = len(sources)
             invalid_citations = []
-            for match in citation_matches:
-                try:
-                    idx = int(match)
-                    if idx <= 0 or idx > total_sources:
-                        invalid_citations.append(match)
-                except ValueError:
-                    invalid_citations.append(match)
+            
+            # Extract individual integers from blocks like "1, 2" or "1-3"
+            all_citation_numbers = []
+            for block in citation_blocks:
+                for part in block.split(','):
+                    part = part.strip()
+                    if '-' in part:
+                        try:
+                            start, end = part.split('-')
+                            all_citation_numbers.extend(range(int(start), int(end) + 1))
+                        except ValueError:
+                            pass
+                    elif part.isdigit():
+                        all_citation_numbers.append(int(part))
+            
+            for idx in all_citation_numbers:
+                if idx <= 0 or idx > total_sources:
+                    invalid_citations.append(str(idx))
             
             if invalid_citations:
                 findings.append(

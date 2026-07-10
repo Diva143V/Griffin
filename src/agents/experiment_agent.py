@@ -5,11 +5,13 @@ import time
 from typing import Any, Dict
 import ollama
 
+from ..shared.config import MODEL_ROUTING
+
 
 def design_protocol(
     query: str,
     synthesis_report: str,
-    model_name: str = "gemma3:4b",
+    model_name: str | None = None,
     options: Dict[str, Any] | None = None
 ) -> Dict[str, Any]:
     """Design a step-by-step laboratory protocol with negative/positive controls based on findings."""
@@ -20,6 +22,8 @@ def design_protocol(
     assay_focus = "General Assay Analysis"
     suggested_steps = "treating cells and measuring viability/outcomes"
     suggested_controls = "DMSO/vehicle control vs. standard cell-killing reference"
+
+    model_name = model_name or MODEL_ROUTING.get("experiment_planner", "llama3.1:8b")
 
     if any(k in query_lower for k in ["expression", "mrna", "gene", "transcription", "qpcr", "rna"]):
         assay_focus = "Gene Expression / qPCR Assay Protocol"

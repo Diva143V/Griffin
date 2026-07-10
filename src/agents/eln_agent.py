@@ -6,13 +6,15 @@ import random
 from typing import Any, Dict
 import ollama
 
+from ..shared.config import MODEL_ROUTING
+
 
 def format_eln_entry(
     researcher_name: str,
     project_name: str,
     protocol_draft: str,
     user_notes: str = "",
-    model_name: str = "gemma3:4b",
+    model_name: str | None = None,
     options: Dict[str, Any] | None = None
 ) -> Dict[str, Any]:
     """Format and log an Electronic Lab Notebook entry matching the experimental protocol."""
@@ -23,6 +25,8 @@ def format_eln_entry(
     # Generate a unique Experiment ID
     exp_num = random.randint(100, 999)
     experiment_id = f"EXP-{date_code}-{exp_num}"
+
+    model_name = model_name or MODEL_ROUTING.get("experiment_planner", "llama3.1:8b")
 
     prompt = f"""You are an Electronic Lab Notebook (ELN) Assistant. Your task is to format a formal ELN entry.
 

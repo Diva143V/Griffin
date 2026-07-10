@@ -5,12 +5,14 @@ import time
 from typing import Any, Dict, List
 import ollama
 
+from ..shared.config import MODEL_ROUTING
+
 
 def analyze_consensus(
     query: str,
     sources: List[Dict[str, Any]],
     relations: List[Dict[str, Any]],
-    model_name: str = "gemma3:4b",
+    model_name: str | None = None,
     options: Dict[str, Any] | None = None
 ) -> Dict[str, Any]:
     """Analyze the retrieved evidence and relations to find scientific consensus or divergence."""
@@ -41,6 +43,8 @@ def analyze_consensus(
     relations_str = "\n\n".join(relations_desc) if relations_desc else "None"
 
     # 2. Build Prompt
+    model_name = model_name or MODEL_ROUTING.get("consensus_analyst", "llama3.1:8b")
+
     system_prompt = (
         "You are a Senior Scientific Consensus Analyst. Your mandate:\n"
         "1. Synthesize multi-paper evidence into a rigorous consensus statement\n"

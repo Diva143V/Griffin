@@ -33,11 +33,12 @@ Read the scientific abstract below and extract:
 2. Stance (support / contradict / neutral)
 3. Short reason
 
-Return ONLY in this format:
-
-Claim: <one short sentence>
-Stance: <support|contradict|neutral>
-Reason: <one short sentence>
+Return ONLY a valid JSON object in this exact format:
+{{
+  "claim": "<one short sentence>",
+  "stance": "<support|contradict|neutral>",
+  "reason": "<one short sentence>"
+}}
 
 Title:
 {title}
@@ -49,14 +50,28 @@ Abstract:
 
 def parse_output(output: str) -> Dict[str, str]:
     """Best-effort parse of the model response into structured fields."""
+    import json
     claim = ""
     stance = ""
     reason = ""
 
+    try:
+        data = json.loads(output)
+        claim = data.get("claim", "")
+        raw_stance = data.get("stance", "")
+        reason = data.get("reason", "")
+        
+        normalized = raw_stance.lower().strip()
+        stance = normalized if normalized in ALLOWED_STANCES else raw_stance
+        return {"claim": claim, "stance": stance, "reason": reason}
+    except Exception:
+        pass
+
+    # Fallback to regex if JSON parsing fails
     patterns = {
-        "claim": r"(?im)^\s*claim\s*:\s*(.+)$",
-        "stance": r"(?im)^\s*stance\s*:\s*(.+)$",
-        "reason": r"(?im)^\s*reason\s*:\s*(.+)$",
+        "claim": r"(?im)^\s*[\"']?claim[\"']?\s*:\s*[\"']?(.+?)[\"']?,?$",
+        "stance": r"(?im)^\s*[\"']?stance[\"']?\s*:\s*[\"']?(.+?)[\"']?,?$",
+        "reason": r"(?im)^\s*[\"']?reason[\"']?\s*:\s*[\"']?(.+?)[\"']?,?$",
     }
 
     for key, pattern in patterns.items():
@@ -137,6 +152,7 @@ def extract_claims(
             response = ollama.chat(
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
+                format="json"
             )
             output = response["message"]["content"]
             parsed = parse_output(output)

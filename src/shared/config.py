@@ -21,3 +21,13 @@ def require_semantic_scholar_api_key() -> str:
             f"Semantic Scholar API key not found. Set the environment variable {SEMANTIC_SCHOLAR_API_KEY_ENV}."
         )
     return key
+
+
+MODEL_ROUTING = {
+    "planner": "llama3.1:8b",
+    "claim_extractor": "llama3.1:8b",
+    "contradiction_detector": "qwen3.5:9b",
+    "consensus_analyst": "koesn/llama3-openbiollm-8b:latest",
+    "synthesis": "llama3.1:8b",
+    "experiment_planner": "llama3.1:8b",
+}

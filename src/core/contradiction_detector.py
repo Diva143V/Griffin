@@ -26,6 +26,7 @@ import re
 import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
+import concurrent.futures
 from itertools import combinations
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -38,7 +39,7 @@ from sentence_transformers import SentenceTransformer
 # Defaults
 # ---------------------------------------------------------------------------
 
-DEFAULT_MODEL = "llama3.1:8b"
+DEFAULT_MODEL = "qwen3.5:9b"
 DEFAULT_EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 DEFAULT_INPUT = "dataset/claims.csv"
 DEFAULT_EVIDENCE_FILE = "dataset/ranked_papers.csv"
@@ -309,7 +310,8 @@ def run_pairwise_analysis(
     results: List[ClaimPairResult] = []
     total = len(pairs)
 
-    for idx, (i, j, sim) in enumerate(pairs, 1):
+    def process_pair(idx, pair):
+        i, j, sim = pair
         row_a = df.iloc[i]
         row_b = df.iloc[j]
 
@@ -325,20 +327,23 @@ def run_pairwise_analysis(
 
         parsed = analyse_pair(title_a, text_a, stance_a, title_b, text_b, stance_b, model)
 
-        results.append(
-            ClaimPairResult(
-                claim_a_title=title_a,
-                claim_a_text=text_a,
-                claim_a_stance=stance_a,
-                claim_b_title=title_b,
-                claim_b_text=text_b,
-                claim_b_stance=stance_b,
-                cosine_similarity=round(sim, 4),
-                relationship=parsed["relationship"],
-                confidence=round(parsed["confidence"], 3),
-                explanation=parsed["explanation"],
-            )
+        return ClaimPairResult(
+            claim_a_title=title_a,
+            claim_a_text=text_a,
+            claim_a_stance=stance_a,
+            claim_b_title=title_b,
+            claim_b_text=text_b,
+            claim_b_stance=stance_b,
+            cosine_similarity=round(sim, 4),
+            relationship=parsed["relationship"],
+            confidence=round(parsed["confidence"], 3),
+            explanation=parsed["explanation"],
         )
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+        futures = [executor.submit(process_pair, idx, pair) for idx, pair in enumerate(pairs, 1)]
+        for future in concurrent.futures.as_completed(futures):
+            results.append(future.result())
 
     return results
 
