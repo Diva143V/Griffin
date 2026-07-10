@@ -41,7 +41,8 @@ def resolve_options(
     if options:
         base.update(options)
 
-    base.pop("think", None)        # 'think' is NOT a valid option
+    # 'think' is a top-level ollama.chat kwarg on some models, not an options field
+    base.pop("think", None)
     base.setdefault("num_predict", 4096)
     return base
 
@@ -55,11 +56,22 @@ def chat(
     keep_alive: str = DEFAULT_KEEP_ALIVE,
     **kwargs,
 ):
-    """Drop-in replacement for ollama.chat() with keep_alive + presets baked in."""
+    """Drop-in replacement for ollama.chat() with keep_alive + presets baked in.
+
+    If user_options contains ``think: True``, it is forwarded as a top-level
+    argument for models that support Ollama thinking mode (ignored by others).
+    """
+    call_kwargs = dict(kwargs)
+    think_flag = call_kwargs.pop("think", None)
+    if think_flag is None and user_options and "think" in user_options:
+        think_flag = bool(user_options.get("think"))
+    if think_flag is not None:
+        call_kwargs["think"] = think_flag
+
     return ollama.chat(
         model=model,
         messages=messages,
         options=resolve_options(task, options, user_options),
         keep_alive=keep_alive,
-        **kwargs,
+        **call_kwargs,
     )

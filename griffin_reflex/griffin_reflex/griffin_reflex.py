@@ -15,6 +15,9 @@ from griffin_reflex.pages.workspace import workspace
 from griffin_reflex.pages.dashboard import dashboard
 from griffin_reflex.pages.projects import projects
 from griffin_reflex.pages.settings import settings
+from griffin_reflex.pages.dashboard import DashboardState
+from griffin_reflex.pages.workspace import WorkspaceState
+from griffin_reflex.pages.projects import ProjectsState
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
@@ -257,10 +260,11 @@ class State(rx.State):
     sel_eln: bool = True
     sel_synthesis: bool = True
     
-    collector_limits: dict[str, int] = {
-        "PubMed": 20, "PMC": 20, "SemanticScholar": 20, "OpenAlex": 20,
-        "ClinicalTrials": 20, "bioRxiv": 20, "ChEMBL": 20, "UniProt": 20,
-        "PubChem": 20, "dbSNP": 20
+    # Stored as strings so controlled number inputs stay in sync with UI
+    collector_limits: dict[str, str] = {
+        "PubMed": "20", "PMC": "20", "SemanticScholar": "20", "OpenAlex": "20",
+        "ClinicalTrials": "20", "bioRxiv": "20", "ChEMBL": "20", "UniProt": "20",
+        "PubChem": "20", "dbSNP": "20",
     }
     refinement_instruction: str = ""
     
@@ -314,6 +318,7 @@ class State(rx.State):
     
     # Phase 7 State
     is_graph_running: bool = False
+    graph_loaded: bool = False
     graph_figure: go.Figure = go.Figure()
     
     # Trace output UI
@@ -334,6 +339,17 @@ class State(rx.State):
         loop=asyncio.get_running_loop()
         self.installed_models = await loop.run_in_executor(None, get_ollama_model_names)
         self.gemini_model_list = await loop.run_in_executor(None, get_gemini_model_names, self.api_key)
+        # Prefill planner query from onboarding / last run goal when empty
+        if not (self.query or "").strip():
+            goal_path = os.path.join(DATASET_DIR, "last_research_goal.txt")
+            if os.path.exists(goal_path):
+                try:
+                    with open(goal_path, "r", encoding="utf-8") as gf:
+                        g = gf.read().strip()
+                    if g:
+                        self.query = g
+                except Exception:
+                    pass
 
     @rx.event
     async def set_api_key(self, val: str): 
@@ -386,48 +402,62 @@ class State(rx.State):
     @rx.event
     def clear_chat_history(self): self.chat_history = []
     
+    def _set_limit(self, key: str, val: str):
+        # Keep raw string for controlled input; pipeline coerces to int
+        self.collector_limits[key] = str(val).strip() if str(val).strip() else "0"
+
     @rx.event
-    def set_collector_limit(self, k: str, val: int): self.collector_limits[k] = val
+    def set_collector_limit(self, k: str, val: str):
+        self._set_limit(k, val)
+
     @rx.event
     def set_limit_pubmed(self, val: str):
-        try: self.collector_limits["PubMed"] = int(val)
-        except: pass
+        self._set_limit("PubMed", val)
+
     @rx.event
     def set_limit_pmc(self, val: str):
-        try: self.collector_limits["PMC"] = int(val)
-        except: pass
+        self._set_limit("PMC", val)
+
     @rx.event
     def set_limit_semanticscholar(self, val: str):
-        try: self.collector_limits["SemanticScholar"] = int(val)
-        except: pass
+        self._set_limit("SemanticScholar", val)
+
     @rx.event
     def set_limit_openalex(self, val: str):
-        try: self.collector_limits["OpenAlex"] = int(val)
-        except: pass
+        self._set_limit("OpenAlex", val)
+
     @rx.event
     def set_limit_clinicaltrials(self, val: str):
-        try: self.collector_limits["ClinicalTrials"] = int(val)
-        except: pass
+        self._set_limit("ClinicalTrials", val)
+
     @rx.event
     def set_limit_biorxiv(self, val: str):
-        try: self.collector_limits["bioRxiv"] = int(val)
-        except: pass
+        self._set_limit("bioRxiv", val)
+
     @rx.event
     def set_limit_chembl(self, val: str):
-        try: self.collector_limits["ChEMBL"] = int(val)
-        except: pass
+        self._set_limit("ChEMBL", val)
+
     @rx.event
     def set_limit_uniprot(self, val: str):
-        try: self.collector_limits["UniProt"] = int(val)
-        except: pass
+        self._set_limit("UniProt", val)
+
     @rx.event
     def set_limit_pubchem(self, val: str):
-        try: self.collector_limits["PubChem"] = int(val)
-        except: pass
+        self._set_limit("PubChem", val)
+
     @rx.event
     def set_limit_dbsnp(self, val: str):
-        try: self.collector_limits["dbSNP"] = int(val)
-        except: pass
+        self._set_limit("dbSNP", val)
+
+    def _collector_limits_int(self) -> dict[str, int]:
+        out: dict[str, int] = {}
+        for k, v in (self.collector_limits or {}).items():
+            try:
+                out[k] = max(0, int(float(str(v))))
+            except Exception:
+                out[k] = 20
+        return out
     @rx.event
     def set_force_fresh(self, val: bool): self.force_fresh = val
     @rx.event
@@ -529,7 +559,12 @@ class State(rx.State):
         
         full_prompt = f"You are a biomedical research assistant.\nAnswer the user's question using the scientific evidence provided below.\n\nUSER QUESTION:\n{prompt}\n\nDATASET CONTEXT:\n{chr(10).join(context_list)}\n\nPlease provide a structured, concise response backed by the contextual evidence above. Cite the specific sources using their identifiers."
         
-        llm_opts = {"temperature": self.llm_temperature, "num_ctx": int(self.llm_num_ctx)}
+        llm_opts = {
+            "temperature": self.llm_temperature,
+            "num_ctx": int(self.llm_num_ctx),
+            "num_predict": int(self.llm_num_predict),
+            "think": bool(self.llm_think),
+        }
         answer = await loop.run_in_executor(None, _ollama_generate_sync, full_prompt, self.rag_model_choice, llm_opts)
         
         typed_sources = [ChatSource(**src) for src in retrieved_sources]
@@ -589,16 +624,65 @@ class State(rx.State):
                     })
                 self.routing_stats = rs_list
                 
-                self.consensus_report = trace_data.get("consensus", {}).get("consensus_report", "")
+                # Prefer consensus report; fall back to synthesis answer
+                cons = trace_data.get("consensus") or {}
+                self.consensus_report = cons.get("consensus_report", "") or trace_data.get("synthesis_answer", "")
                 self.experiment_protocol = trace_data.get("experiment_protocol", "")
                 self.eln_entry = trace_data.get("eln_entry", "")
-                self.fetched_sources = trace_data.get("sources", [])
-                self.matched_claims = trace_data.get("claims", [])
-                self.graph_relations_trace = trace_data.get("relations", [])
-                
+
+                # Normalize sources for UI (ensure required string keys)
+                raw_sources = trace_data.get("sources", []) or []
+                norm_sources = []
+                for s in raw_sources:
+                    if not isinstance(s, dict):
+                        continue
+                    norm_sources.append(
+                        {
+                            "title": str(s.get("title", "Untitled")),
+                            "evidence_score": str(s.get("evidence_score", s.get("score", "—"))),
+                            "study_design": str(s.get("study_design", "") or ""),
+                            "sample_size": str(s.get("sample_size", "") or ""),
+                            "abstract": str(s.get("abstract", "") or "")[:400],
+                        }
+                    )
+                self.fetched_sources = norm_sources
+
+                raw_claims = trace_data.get("claims", []) or []
+                norm_claims = []
+                for c in raw_claims:
+                    if not isinstance(c, dict):
+                        continue
+                    norm_claims.append(
+                        {
+                            "title": str(c.get("title", "")),
+                            "claim": str(c.get("claim", "")),
+                            "stance": str(c.get("stance", "")),
+                            "reason": str(c.get("reason", "")),
+                        }
+                    )
+                self.matched_claims = norm_claims
+                self.graph_relations_trace = trace_data.get("relations", []) or []
+
+                # Normalize verification_trace findings to list[str]
+                vtrace = []
+                for step in trace_data.get("verification_trace", []) or []:
+                    if not isinstance(step, dict):
+                        continue
+                    findings = step.get("findings") or []
+                    if isinstance(findings, str):
+                        findings = [findings]
+                    vtrace.append(
+                        {
+                            "attempt": str(step.get("attempt", "")),
+                            "status": str(step.get("status", "")),
+                            "findings": [str(f) for f in findings],
+                        }
+                    )
+                self.verification_trace = vtrace
+
                 # Render <think> tags correctly for consensus report
                 self.consensus_report = format_reasoning_text(self.consensus_report, self.llm_reasoning_mode)
-                
+
                 self.pipeline_trace_visible = True
             except Exception as e:
                 self.logs.append(f"Failed to load execution trace: {e}")
@@ -608,26 +692,59 @@ class State(rx.State):
         import subprocess
         root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
         cli_path = os.path.join(root_dir, "run_pipeline_cli.py")
-        
+        os.makedirs(os.path.join(root_dir, "dataset"), exist_ok=True)
+
+        # Persist research goal for V2 dashboard
+        try:
+            with open(os.path.join(root_dir, "dataset", "last_research_goal.txt"), "w", encoding="utf-8") as gf:
+                gf.write((self.query or "").strip())
+        except Exception:
+            pass
+
         forced_agents = ""
         if self.use_manual_agents:
             fa = []
-            if self.sel_claim_extractor: fa.append("claim_extractor")
-            if self.sel_consensus: fa.append("consensus_analyst")
-            if self.sel_evidence: fa.append("evidence_ranker")
-            if self.sel_experiment: fa.append("experiment_planner")
-            if self.sel_contradiction: fa.append("contradiction_detector")
-            if self.sel_eln: fa.append("eln_assistant")
-            if self.sel_synthesis: fa.append("synthesis")
+            if self.sel_claim_extractor:
+                fa.append("claim_extractor")
+            if self.sel_consensus:
+                fa.append("consensus_analyst")
+            if self.sel_evidence:
+                fa.append("evidence_ranker")
+            if self.sel_experiment:
+                fa.append("experiment_planner")
+            if self.sel_contradiction:
+                fa.append("contradiction_detector")
+            if self.sel_eln:
+                fa.append("eln_assistant")
+            if self.sel_synthesis:
+                fa.append("synthesis")
             forced_agents = ",".join(fa)
-            
+
         env = os.environ.copy()
         env["PYTHONUNBUFFERED"] = "1"
         env["GRIFFIN_ROUTING"] = json.dumps(self.get_actual_model_routing)
-        env["GRIFFIN_LLM_OPTS"] = json.dumps({"temperature": self.llm_temperature, "num_ctx": int(self.llm_num_ctx), "num_predict": int(self.llm_num_predict)})
-        
+        env["GRIFFIN_LLM_OPTS"] = json.dumps(
+            {
+                "temperature": self.llm_temperature,
+                "num_ctx": int(self.llm_num_ctx),
+                "num_predict": int(self.llm_num_predict),
+                "think": bool(self.llm_think),
+            }
+        )
+        # P0: wire UI controls that previously did nothing
+        env["GRIFFIN_FORCE_FRESH"] = "1" if self.force_fresh else "0"
+        if forced_agents:
+            env["GRIFFIN_FORCED_AGENTS"] = forced_agents
+        else:
+            env.pop("GRIFFIN_FORCED_AGENTS", None)
+        env["GRIFFIN_COLLECTOR_LIMITS"] = json.dumps(self._collector_limits_int())
+        if (self.refinement_instruction or "").strip():
+            env["GRIFFIN_REFINEMENT"] = self.refinement_instruction.strip()
+        else:
+            env.pop("GRIFFIN_REFINEMENT", None)
+
         cmd = [sys.executable, cli_path, self.query, self.email, self.api_key, self.sc_api_key]
-        
+
         try:
             with open(os.path.join(root_dir, "dataset", "terminal.log"), "a", encoding="utf-8") as log_file:
                 subprocess.run(cmd, cwd=root_dir, check=True, env=env, stdout=log_file, stderr=subprocess.STDOUT)
@@ -648,7 +765,12 @@ class State(rx.State):
     async def run_synthesis_agent(self):
         self.is_synthesis_running=True; yield
         loop=asyncio.get_running_loop()
-        opts = {"temperature": self.llm_temperature, "num_ctx": int(self.llm_num_ctx)}
+        opts = {
+            "temperature": self.llm_temperature,
+            "num_ctx": int(self.llm_num_ctx),
+            "num_predict": int(self.llm_num_predict),
+            "think": bool(self.llm_think),
+        }
         res = await loop.run_in_executor(None, _run_synthesis_sync, self.query, self.get_actual_model_routing.get("consensus_analyst", "llama3.1:8b"), opts)
         self.synthesis_report = format_reasoning_text(res.get("consensus_report", ""), self.llm_reasoning_mode)
         self.is_synthesis_running=False; yield
@@ -745,26 +867,61 @@ class State(rx.State):
         self.is_refine_running=False; yield
 
     async def run_benchmark(self):
-        self.eval_running=True; self.std_latency="--"; self.graph_latency="--"; yield
-        loop=asyncio.get_running_loop()
+        self.eval_running = True
+        self.std_latency = "--"
+        self.graph_latency = "--"
+        yield
+        loop = asyncio.get_running_loop()
         mc = self.global_model_choice if self.use_global_model else self.get_actual_model_routing.get("synthesis", "llama3.1:8b")
-        res=await loop.run_in_executor(None, _benchmark_sync, self.eval_question, mc)
-        self.std_latency=res["std_lat"]; self.std_citations=res["std_cit"]
-        self.std_ans=format_reasoning_text(res["std_ans"], self.llm_reasoning_mode)
-        self.std_words=res["std_words"]; self.std_sources_data=res["std_sources_data"]
-        
-        self.graph_latency=res["graph_lat"]; self.graph_citations=res["graph_cit"]
-        self.graph_ans=format_reasoning_text(res["graph_ans"], self.llm_reasoning_mode)
-        self.graph_words=res["graph_words"]; self.graph_sources_data=res["graph_sources_data"]
-        self.graph_relations_data=res["graph_relations_data"]
-        self.eval_running=False; yield
+        res = await loop.run_in_executor(None, _benchmark_sync, self.eval_question, mc)
+        self.std_latency = res["std_lat"]
+        self.std_citations = res["std_cit"]
+        self.std_ans = format_reasoning_text(res["std_ans"], self.llm_reasoning_mode)
+        self.std_words = res["std_words"]
+
+        def _norm_sources(items):
+            out = []
+            for s in items or []:
+                if isinstance(s, dict):
+                    out.append({"title": str(s.get("title", "Untitled"))[:160]})
+                else:
+                    out.append({"title": str(s)[:160]})
+            return out
+
+        def _norm_relations(items):
+            out = []
+            for r in items or []:
+                if isinstance(r, dict):
+                    a = r.get("claim_a_title") or r.get("source") or r.get("a") or ""
+                    b = r.get("claim_b_title") or r.get("target") or r.get("b") or ""
+                    t = r.get("type") or r.get("label") or "related"
+                    out.append({"title": f"{a} —[{t}]→ {b}"[:200]})
+                else:
+                    out.append({"title": str(r)[:200]})
+            return out
+
+        self.std_sources_data = _norm_sources(res.get("std_sources_data"))
+        self.graph_latency = res["graph_lat"]
+        self.graph_citations = res["graph_cit"]
+        self.graph_ans = format_reasoning_text(res["graph_ans"], self.llm_reasoning_mode)
+        self.graph_words = res["graph_words"]
+        self.graph_sources_data = _norm_sources(res.get("graph_sources_data"))
+        self.graph_relations_data = _norm_relations(res.get("graph_relations_data"))
+        self.eval_running = False
+        yield
 
     async def load_knowledge_graph(self):
-        self.is_graph_running=True; yield
-        loop=asyncio.get_running_loop()
-        fig=await loop.run_in_executor(None, _graph_sync)
-        self.graph_figure=fig
-        self.is_graph_running=False; yield
+        self.is_graph_running = True
+        yield
+        loop = asyncio.get_running_loop()
+        fig = await loop.run_in_executor(None, _graph_sync)
+        if fig is not None:
+            self.graph_figure = fig
+            self.graph_loaded = True
+        else:
+            self.graph_loaded = False
+        self.is_graph_running = False
+        yield
 
 
 # ── Design tokens (shared style helpers) ──────────────────────────────────────
@@ -896,7 +1053,7 @@ def sidebar():
             rx.scroll_area(
                 rx.vstack(
                     rx.text("🔑 Credentials & Settings", **_section_label),
-                    rx.input(placeholder="PubMed Email", default_value="test@example.com", on_change=State.set_email, **_input_style),
+                    rx.input(placeholder="PubMed Email", value=State.email, on_change=State.set_email, **_input_style),
                     rx.input(placeholder="Semantic Scholar Key", type="password", on_change=State.set_sc_api_key, **_input_style),
                     rx.input(placeholder="Google API Key (Gemini)", type="password", on_change=State.set_api_key, **_input_style),
                     rx.select(State.gemini_model_list, value=State.gemini_model_choice, on_change=State.set_gemini_model_choice, width="100%", size="3"),
@@ -1054,12 +1211,12 @@ def _page_header(title: str, subtitle: str) -> rx.Component:
     )
 
 
-def _limit_field(label: str, on_change) -> rx.Component:
+def _limit_field(label: str, value, on_change) -> rx.Component:
     return rx.vstack(
         rx.text(label, size="1", weight="medium", color="var(--gray-11)"),
         rx.input(
             type="number",
-            default_value="20",
+            value=value,
             on_change=on_change,
             size="2",
             radius="large",
@@ -1075,6 +1232,7 @@ def tab0_content():
         _page_header("Scientific Query Planner", "Build research datasets and execute autonomous scientific agents."),
         rx.text_area(
             placeholder="e.g. Does metformin reduce breast cancer recurrence in diabetic patients?",
+            value=State.query,
             on_change=State.set_query,
             width="100%",
             height="120px",
@@ -1084,16 +1242,16 @@ def tab0_content():
         ),
         rx.text("📥 Max Papers to Fetch per Source", weight="bold", size="3", style={"fontFamily": _FONT_DISPLAY}, margin_top="4"),
         rx.hstack(
-            _limit_field("PubMed", State.set_limit_pubmed),
-            _limit_field("PMC", State.set_limit_pmc),
-            _limit_field("SemanticScholar", State.set_limit_semanticscholar),
-            _limit_field("OpenAlex", State.set_limit_openalex),
-            _limit_field("ClinicalTrials", State.set_limit_clinicaltrials),
-            _limit_field("bioRxiv", State.set_limit_biorxiv),
-            _limit_field("ChEMBL", State.set_limit_chembl),
-            _limit_field("UniProt", State.set_limit_uniprot),
-            _limit_field("PubChem", State.set_limit_pubchem),
-            _limit_field("dbSNP", State.set_limit_dbsnp),
+            _limit_field("PubMed", State.collector_limits["PubMed"], State.set_limit_pubmed),
+            _limit_field("PMC", State.collector_limits["PMC"], State.set_limit_pmc),
+            _limit_field("SemanticScholar", State.collector_limits["SemanticScholar"], State.set_limit_semanticscholar),
+            _limit_field("OpenAlex", State.collector_limits["OpenAlex"], State.set_limit_openalex),
+            _limit_field("ClinicalTrials", State.collector_limits["ClinicalTrials"], State.set_limit_clinicaltrials),
+            _limit_field("bioRxiv", State.collector_limits["bioRxiv"], State.set_limit_biorxiv),
+            _limit_field("ChEMBL", State.collector_limits["ChEMBL"], State.set_limit_chembl),
+            _limit_field("UniProt", State.collector_limits["UniProt"], State.set_limit_uniprot),
+            _limit_field("PubChem", State.collector_limits["PubChem"], State.set_limit_pubchem),
+            _limit_field("dbSNP", State.collector_limits["dbSNP"], State.set_limit_dbsnp),
             wrap="wrap",
             spacing="4",
             width="100%",
@@ -1143,6 +1301,7 @@ def tab0_content():
                         rx.text("Does this match what you intended to search? You can refine the query below:", size="2"),
                         rx.input(
                             placeholder="Refinement (e.g. focus on clinical evidence)",
+                            value=State.refinement_instruction,
                             on_change=State.set_refinement_instruction,
                             **_input_style,
                         ),
@@ -1202,11 +1361,88 @@ def tab0_content():
                 rx.card(rx.markdown(State.consensus_report), **_card_style),
                 rx.heading("Verification Status", size="5", style={"fontFamily": _FONT_DISPLAY}),
                 rx.badge(State.verification_status, size="2", color_scheme="indigo", variant="soft", radius="full"),
+                rx.cond(
+                    State.verification_trace.length() > 0,
+                    rx.vstack(
+                        rx.heading("Verification Trace", size="4", style={"fontFamily": _FONT_DISPLAY}),
+                        rx.foreach(
+                            State.verification_trace,
+                            lambda step: rx.box(
+                                rx.hstack(
+                                    rx.badge(f"Attempt {step['attempt']}", color_scheme="indigo", variant="soft"),
+                                    rx.badge(step["status"], variant="outline"),
+                                    spacing="2",
+                                ),
+                                rx.foreach(
+                                    step["findings"],
+                                    lambda f: rx.text(f"• {f}", size="2", color="var(--gray-11)"),
+                                ),
+                                padding="3",
+                                border_radius="12px",
+                                width="100%",
+                                style={"background": "rgba(15,23,42,0.55)", "border": "1px solid rgba(148,163,184,0.12)"},
+                            ),
+                        ),
+                        spacing="2",
+                        width="100%",
+                    ),
+                ),
                 rx.heading("🤖 LLM Routing & Performance Summary", size="5", style={"fontFamily": _FONT_DISPLAY}),
                 rx.data_table(
                     data=State.routing_stats,
                     columns=["Stage", "Requested", "Resolved", "Latency", "Status"],
                     width="100%",
+                ),
+                rx.cond(
+                    State.fetched_sources.length() > 0,
+                    rx.vstack(
+                        rx.heading("📚 Retrieved Sources", size="5", style={"fontFamily": _FONT_DISPLAY}),
+                        rx.foreach(
+                            State.fetched_sources,
+                            lambda src: rx.box(
+                                rx.text(src["title"], weight="bold", size="2"),
+                                rx.hstack(
+                                    rx.badge(f"Score {src['evidence_score']}", color_scheme="indigo", variant="soft"),
+                                    rx.cond(
+                                        src["study_design"] != "",
+                                        rx.badge(src["study_design"], color_scheme="gray", variant="outline"),
+                                    ),
+                                    spacing="2",
+                                ),
+                                padding="3",
+                                border_radius="12px",
+                                width="100%",
+                                margin_bottom="2",
+                                style={"background": "rgba(15,23,42,0.55)", "border": "1px solid rgba(148,163,184,0.12)"},
+                            ),
+                        ),
+                        spacing="2",
+                        width="100%",
+                    ),
+                ),
+                rx.cond(
+                    State.matched_claims.length() > 0,
+                    rx.vstack(
+                        rx.heading("🔎 Matched Claims", size="5", style={"fontFamily": _FONT_DISPLAY}),
+                        rx.foreach(
+                            State.matched_claims,
+                            lambda c: rx.box(
+                                rx.text(c["claim"], size="2"),
+                                rx.hstack(
+                                    rx.badge(c["stance"], color_scheme="cyan", variant="soft"),
+                                    rx.text(c["title"], size="1", color="var(--gray-10)"),
+                                    spacing="2",
+                                ),
+                                padding="3",
+                                border_radius="12px",
+                                width="100%",
+                                margin_bottom="2",
+                                style={"background": "rgba(15,23,42,0.55)", "border": "1px solid rgba(148,163,184,0.12)"},
+                            ),
+                        ),
+                        spacing="2",
+                        width="100%",
+                    ),
                 ),
                 rx.heading("🧪 Experiment Protocol Draft", size="5", style={"fontFamily": _FONT_DISPLAY}),
                 rx.card(rx.markdown(State.experiment_protocol), **_card_style),
@@ -1326,12 +1562,13 @@ def tab3_content():
         _page_header("GraphRAG Explorer", "Interactive Plotly network of knowledge domains and claim relations."),
         rx.button("Load Knowledge Graph", on_click=State.load_knowledge_graph, loading=State.is_graph_running, **_btn_primary, margin_bottom="3"),
         rx.cond(
-            State.graph_figure,
+            State.graph_loaded,
             rx.card(rx.plotly(data=State.graph_figure, height="600px", width="100%"), **_card_style),
             rx.card(
                 rx.vstack(
                     rx.icon(tag="network", size=64, color="var(--accent-9)"),
                     rx.text("Click 'Load Knowledge Graph' to visualize.", weight="bold", style={"fontFamily": _FONT_DISPLAY}),
+                    rx.text("Requires dataset/contradictions.json from a completed pipeline run.", size="2", color="var(--gray-11)"),
                     align_items="center",
                     justify_content="center",
                     height="400px",
@@ -1453,6 +1690,23 @@ def tab_eval_content():
                         rx.text(f"Citations: {State.std_citations} | Words: {State.std_words}", weight="bold", size="2"),
                     ),
                     rx.markdown(State.std_ans),
+                    rx.cond(
+                        State.std_sources_data.length() > 0,
+                        rx.vstack(
+                            rx.text("Sources", weight="bold", size="2", color="var(--gray-11)"),
+                            rx.foreach(
+                                State.std_sources_data,
+                                lambda s: rx.text(
+                                    f"• {s['title']}",
+                                    size="1",
+                                    color="var(--gray-10)",
+                                ),
+                            ),
+                            spacing="1",
+                            width="100%",
+                            margin_top="2",
+                        ),
+                    ),
                     spacing="3",
                     width="100%",
                 ),
@@ -1473,6 +1727,40 @@ def tab_eval_content():
                         rx.text(f"Citations: {State.graph_citations} | Words: {State.graph_words}", weight="bold", size="2"),
                     ),
                     rx.markdown(State.graph_ans),
+                    rx.cond(
+                        State.graph_sources_data.length() > 0,
+                        rx.vstack(
+                            rx.text("Sources", weight="bold", size="2", color="var(--gray-11)"),
+                            rx.foreach(
+                                State.graph_sources_data,
+                                lambda s: rx.text(
+                                    f"• {s['title']}",
+                                    size="1",
+                                    color="var(--gray-10)",
+                                ),
+                            ),
+                            spacing="1",
+                            width="100%",
+                            margin_top="2",
+                        ),
+                    ),
+                    rx.cond(
+                        State.graph_relations_data.length() > 0,
+                        rx.vstack(
+                            rx.text("Graph relations", weight="bold", size="2", color="var(--gray-11)"),
+                            rx.foreach(
+                                State.graph_relations_data,
+                                lambda r: rx.text(
+                                    f"• {r['title']}",
+                                    size="1",
+                                    color="var(--gray-10)",
+                                ),
+                            ),
+                            spacing="1",
+                            width="100%",
+                            margin_top="2",
+                        ),
+                    ),
                     spacing="3",
                     width="100%",
                 ),
@@ -1573,7 +1861,7 @@ def tab6_content():
 def main_content():
     return rx.box(
         rx.vstack(
-            # Top brand strip
+            # Top brand strip + unified app navigation
             rx.hstack(
                 rx.badge(
                     "Multi-Agent Scientific Workbench",
@@ -1583,10 +1871,19 @@ def main_content():
                     radius="full",
                 ),
                 rx.spacer(),
+                rx.hstack(
+                    rx.link(rx.button("Dashboard", size="1", variant="soft", color_scheme="gray"), href="/dashboard"),
+                    rx.link(rx.button("Workspace", size="1", variant="soft", color_scheme="gray"), href="/workspace"),
+                    rx.link(rx.button("Labs", size="1", variant="soft", color_scheme="gray"), href="/projects"),
+                    rx.link(rx.button("Settings", size="1", variant="soft", color_scheme="gray"), href="/settings"),
+                    spacing="2",
+                ),
                 rx.text("Griffin Bio", size="2", weight="medium", color="var(--gray-10)", style={"fontFamily": _FONT_DISPLAY}),
                 width="100%",
                 align_items="center",
                 margin_bottom="4",
+                spacing="3",
+                wrap="wrap",
             ),
             rx.tabs.root(
                 rx.tabs.list(
@@ -1711,7 +2008,22 @@ app = rx.App(
 )
 app.add_page(index, title="Griffin Bio Reflex", on_load=State.on_load)
 app.add_page(onboarding, route="/onboarding", title="Griffin AI - Onboarding")
-app.add_page(workspace, route="/workspace", title="Griffin AI - Research Workspace")
-app.add_page(dashboard, route="/dashboard", title="Griffin AI - Dashboard")
-app.add_page(projects, route="/projects", title="Griffin AI - Labs")
+app.add_page(
+    workspace,
+    route="/workspace",
+    title="Griffin AI - Research Workspace",
+    on_load=WorkspaceState.load_workspace,
+)
+app.add_page(
+    dashboard,
+    route="/dashboard",
+    title="Griffin AI - Dashboard",
+    on_load=DashboardState.load_metrics,
+)
+app.add_page(
+    projects,
+    route="/projects",
+    title="Griffin AI - Labs",
+    on_load=ProjectsState.load_projects,
+)
 app.add_page(settings, route="/settings", title="Griffin AI - Configuration")
