@@ -111,8 +111,10 @@ Please provide a structured, concise response backed by the contextual evidence 
     # Graph RAG
     status_placeholder.info("🔍 Graph RAG: Retrieving papers and mapping claim relationships...")
     t_ret_start = time.time()
+    
+    neo4j_client = st.session_state.get("neo4j_client") if st.session_state.get("use_neo4j", False) else None
     graph_context, graph_sources, graph_relations = graph_rag.get_graph_rag_context(
-        eval_question, encoder_model, ranked_df, contradictions, max_papers=eval_k
+        eval_question, encoder_model, ranked_df, contradictions, max_papers=eval_k, neo4j_client=neo4j_client
     )
     graph_ret_time = time.time() - t_ret_start
     
@@ -1358,6 +1360,58 @@ st.session_state["llm_options"] = {
     "num_predict": llm_num_predict,
 }
 st.session_state["reasoning_mode"] = llm_reasoning_mode
+
+# --- Neo4j Integration Settings ---
+st.sidebar.markdown("---")
+st.sidebar.markdown("### 🕸️ Neo4j Knowledge Graph")
+with st.sidebar.expander("Neo4j Stack Options", expanded=True):
+    neo4j_uri = st.text_input("Neo4j URI:", value=os.getenv("NEO4J_URI", "bolt://localhost:7687"), key="neo4j_uri_input")
+    neo4j_user = st.text_input("Neo4j User:", value=os.getenv("NEO4J_USERNAME", "neo4j"), key="neo4j_user_input")
+    neo4j_pass = st.text_input("Neo4j Password:", value=os.getenv("NEO4J_PASSWORD", "password"), type="password", key="neo4j_pass_input")
+    
+    # Update environment variables so that client connects with these details
+    os.environ["NEO4J_URI"] = neo4j_uri
+    os.environ["NEO4J_USERNAME"] = neo4j_user
+    os.environ["NEO4J_PASSWORD"] = neo4j_pass
+    
+    # Initialize Neo4j Client in session state
+    from src.core.neo4j_client import Neo4jClient
+    
+    if "neo4j_client" not in st.session_state or st.session_state["neo4j_client"] is None:
+        st.session_state["neo4j_client"] = Neo4jClient(uri=neo4j_uri, user=neo4j_user, password=neo4j_pass)
+    else:
+        # Re-init if parameters changed
+        client = st.session_state["neo4j_client"]
+        if client.uri != neo4j_uri or client.user != neo4j_user or client.password != neo4j_pass:
+            client.close()
+            st.session_state["neo4j_client"] = Neo4jClient(uri=neo4j_uri, user=neo4j_user, password=neo4j_pass)
+            
+    # Connection status indicator
+    is_connected = False
+    try:
+        is_connected = st.session_state["neo4j_client"].verify_connection()
+    except Exception:
+        pass
+        
+    if is_connected:
+        st.success("🟢 Connected to Neo4j")
+    else:
+        st.error("🔴 Disconnected from Neo4j")
+        
+    # Toggle for using Neo4j
+    use_neo4j = st.toggle("Enable Neo4j Graph RAG", value=is_connected, key="use_neo4j_toggle")
+    st.session_state["use_neo4j"] = use_neo4j
+    
+    # Trigger database synchronization button
+    if is_connected:
+        if st.button("🔄 Sync Datasets to Neo4j", use_container_width=True, key="sync_neo4j_db_btn"):
+            with st.spinner("Populating Neo4j knowledge graph..."):
+                try:
+                    from sync_neo4j import sync_database
+                    sync_database(model=model_routing.get("claim_extractor", "llama3.1:8b"))
+                    st.success("🎉 Successfully synced papers, claims, relationships, and entities to Neo4j!")
+                except Exception as e:
+                    st.error(f"Sync failed: {e}")
 
 st.sidebar.markdown("---")
 

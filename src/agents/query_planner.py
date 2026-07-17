@@ -91,33 +91,39 @@ def get_valid_model(requested_model: str, fallback_priority: List[str] = None) -
 
 
 def check_and_trigger_retrieval(query: str, encoder_model: Any, top_k: int) -> Tuple[bool, str]:
-    """Check if Chroma DB contains relevant papers for the query. If not, trigger the collectors."""
-    db_path = "dataset/chroma_db"
-    os.makedirs(db_path, exist_ok=True)
+    """Check if Neo4j contains relevant papers for the query using native vector search. If not, trigger the collectors."""
+    from src.core.neo4j_client import Neo4jClient
+    client = Neo4jClient()
+    if not client.connect():
+        return False, "Could not connect to Neo4j database to check cache."
     
-    client = chromadb.PersistentClient(path=db_path)
-    collection = client.get_or_create_collection("papers", metadata={"hnsw:space": "cosine"})
-    
-    # Check if empty
-    if collection.count() == 0:
-        return False, "Chroma DB is empty."
+    try:
+        # Check if the vector index contains any nodes
+        count_res = client.query_graph("MATCH (p:Paper) WHERE p.embedding IS NOT NULL RETURN count(p) AS cnt")
+        paper_count = count_res[0]["cnt"] if count_res else 0
+        if paper_count == 0:
+            return False, "Neo4j database is empty of paper embeddings."
+            
+        # Get closest match
+        query_emb = encoder_model.encode([query], normalize_embeddings=True)[0].tolist()
+        results = client.query_vector_similar_papers(query_vector=query_emb, top_k=1)
         
-    # Get closest match
-    query_emb = encoder_model.encode([query], normalize_embeddings=True)[0].tolist()
-    results = collection.query(
-        query_embeddings=[query_emb],
-        n_results=1
-    )
-    
-    if not results or not results["distances"] or not results["distances"][0]:
-        return False, "No results returned."
+        if not results:
+            return False, "No papers returned from Neo4j vector cache."
+            
+        closest_match = results[0]
+        score = float(closest_match.get("score", 0.0))
         
-    closest_distance = float(results["distances"][0][0])
-    # A distance of 0.25 or less indicates high semantic similarity (cosine similarity >= 0.75)
-    if closest_distance <= 0.25:
-        return True, f"Found relevant papers in Chroma DB (closest distance: {closest_distance:.3f}). Bypassing retrieval."
-        
-    return False, f"Closest paper is too distant (distance: {closest_distance:.3f}). Triggering retrieval."
+        # A similarity score of 0.85 or higher indicates semantic relevance
+        if score >= 0.85:
+            return True, f"Found relevant papers in Neo4j (similarity score: {score:.3f}). Bypassing retrieval."
+            
+        return False, f"Closest paper is too distant (similarity score: {score:.3f}). Triggering retrieval."
+    except Exception as e:
+        logger.error("Error checking Neo4j cache: %s", e)
+        return False, f"Neo4j cache check failed: {e}"
+    finally:
+        client.close()
 
 
 def clean_search_query(raw_query: str, model_name: str = "llama3.1:8b") -> str:
@@ -203,7 +209,7 @@ def run_pipeline_ingestion(query: str, email: str = "test@example.com", api_key:
     print(f"Running dynamic ingestion for query: '{search_query}'...")
     
     # Define sources based on whether SemanticScholar API key is available
-    sources = ["PubMed", "PMC", "OpenAlex", "ClinicalTrials", "bioRxiv", "ChEMBL", "UniProt", "PubChem", "dbSNP"]
+    sources = ["PubMed", "PMC", "OpenAlex", "ClinicalTrials", "bioRxiv", "ChEMBL", "UniProt", "PubChem", "dbSNP", "DuckDuckGo"]
     if api_key:
         sources.append("SemanticScholar")
         os.environ["SEMANTIC_SCHOLAR_API_KEY"] = api_key
@@ -465,47 +471,57 @@ def execute_query_plan(
                 except Exception as e:
                     notes.append(f"Failed to read ranked_papers.csv from disk: {e}")
             
-            # If still None or empty, try recovery from Chroma DB
+            # If still None or empty, try recovery from Neo4j
             if ranked_df is None or ranked_df.empty:
                 if status_callback:
-                    status_callback("Dataset files missing or empty on disk. Restoring papers from Chroma DB cache...")
-                notes.append("Files missing or empty on disk. Restoring papers from Chroma DB cache...")
+                    status_callback("Dataset files missing or empty on disk. Restoring papers from Neo4j cache...")
+                notes.append("Files missing or empty on disk. Restoring papers from Neo4j cache...")
                 try:
-                    import chromadb
-                    client = chromadb.PersistentClient(path="dataset/chroma_db")
-                    collection = client.get_collection("papers")
-                    query_emb = encoder_model.encode([search_query], normalize_embeddings=True)[0].tolist()
-                    res = collection.query(
-                        query_embeddings=[query_emb],
-                        n_results=plan.top_k,
-                        include=["documents", "metadatas", "embeddings"]
-                    )
-                    if res and res["metadatas"] and res["metadatas"][0]:
-                        metadatas = res["metadatas"][0]
-                        documents = res["documents"][0]
-                        embs = res.get("embeddings", [[]])[0]
-                        rows = []
-                        for idx, (meta, doc) in enumerate(zip(metadatas, documents)):
-                            row = dict(meta)
-                            row["abstract"] = doc
-                            if embs is not None and len(embs) > 0 and idx < len(embs):
-                                row["embedding"] = np.asarray(embs[idx], dtype=np.float32)
-                            else:
-                                row["embedding"] = np.zeros(384, dtype=np.float32)
-                            rows.append(row)
-                        df = pd.DataFrame(rows)
-                        os.makedirs("dataset", exist_ok=True)
-                        
-                        # Save standard version to disk (converting numpy array to list/string first to avoid raw array dump)
-                        df_disk = df.copy()
-                        df_disk["embedding"] = df_disk["embedding"].apply(lambda x: json.dumps(x.tolist()))
-                        df_disk.to_csv("dataset/clean_papers.csv", index=False)
-                        df_disk.to_csv("dataset/ranked_papers.csv", index=False)
-                        
-                        ranked_df = df
-                        notes.append("Successfully restored papers and embedding vectors from Chroma DB cache to disk.")
+                    from src.core.neo4j_client import Neo4jClient
+                    client = Neo4jClient()
+                    if client.connect():
+                        try:
+                            query_emb = encoder_model.encode([search_query], normalize_embeddings=True)[0].tolist()
+                            similar_papers = client.query_vector_similar_papers(query_vector=query_emb, top_k=plan.top_k)
+                            
+                            if similar_papers:
+                                rows = []
+                                for doc in similar_papers:
+                                    row = {
+                                        "title": doc.get("title", ""),
+                                        "abstract": doc.get("abstract", ""),
+                                        "evidence_score": doc.get("evidence_score", 5.0),
+                                        "study_design": doc.get("study_design", "Undetermined"),
+                                        "sample_size": doc.get("sample_size", 0)
+                                    }
+                                    # Fetch embedding property from Neo4j
+                                    title_query = "MATCH (p:Paper {title: $title}) RETURN p.embedding AS emb"
+                                    emb_res = client.query_graph(title_query, {"title": doc.get("title")})
+                                    emb_list = emb_res[0]["emb"] if emb_res and emb_res[0]["emb"] else None
+                                    
+                                    if emb_list:
+                                        row["embedding"] = np.asarray(emb_list, dtype=np.float32)
+                                    else:
+                                        row["embedding"] = np.zeros(384, dtype=np.float32)
+                                    rows.append(row)
+                                    
+                                df = pd.DataFrame(rows)
+                                os.makedirs("dataset", exist_ok=True)
+                                
+                                # Save standard version to disk
+                                df_disk = df.copy()
+                                df_disk["embedding"] = df_disk["embedding"].apply(lambda x: json.dumps(x.tolist()))
+                                df_disk.to_csv("dataset/clean_papers.csv", index=False)
+                                df_disk.to_csv("dataset/ranked_papers.csv", index=False)
+                                
+                                ranked_df = df
+                                notes.append("Successfully restored papers and embedding vectors from Neo4j cache to disk.")
+                        finally:
+                            client.close()
+                    else:
+                        notes.append("Failed to connect to Neo4j to restore papers.")
                 except Exception as ex:
-                    notes.append(f"Failed to restore papers from Chroma DB: {ex}")
+                    notes.append(f"Failed to restore papers from Neo4j cache: {ex}")
 
     # 1b. Call the Executor LLM Router or use the user's manual selection
     if status_callback:

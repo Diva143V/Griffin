@@ -89,9 +89,48 @@ def get_standard_rag_context(
     encoder_model: SentenceTransformer,
     ranked_df: pd.DataFrame,
     similarity_threshold: float = 0.60,
-    max_papers: int = 8
+    max_papers: int = 8,
+    neo4j_client: Optional[Any] = None
 ) -> Tuple[str, List[Dict[str, Any]]]:
-    """Dynamically retrieve papers based on semantic threshold and sort by evidence score quality."""
+    """Dynamically retrieve papers based on semantic threshold and sort by evidence score quality (Neo4j native vector index or local fallback)."""
+    if neo4j_client and neo4j_client.verify_connection():
+        try:
+            logger.info("Using Neo4j Native Vector Index for RAG retrieval...")
+            query_emb = encoder_model.encode([query], normalize_embeddings=True)[0].tolist()
+            # Retrieve similar nodes directly from Neo4j index
+            similar_papers = neo4j_client.query_vector_similar_papers(query_vector=query_emb, top_k=max_papers)
+            
+            context_list = []
+            sources = []
+            
+            for idx, r in enumerate(similar_papers, 1):
+                sample_size_val = r.get('sample_size', 0)
+                sample_size_str = str(int(sample_size_val)) if (pd.notna(sample_size_val) and sample_size_val > 0) else "N/A"
+                design_str = r.get('study_design', 'Undetermined')
+                sim_val = r.get('score', 0.0)
+                
+                context_list.append(
+                    f"[Source Paper {idx}]\n"
+                    f"Title: {r['title']}\n"
+                    f"Evidence Score: {r['evidence_score']}/10 | Design: {design_str} | Sample Size: {sample_size_str}\n"
+                    f"Abstract: {str(r['abstract'])}"
+                )
+                sources.append({
+                    "index": idx,
+                    "title": r['title'],
+                    "similarity": sim_val,
+                    "evidence_score": r['evidence_score'],
+                    "design": design_str,
+                    "sample_size": sample_size_str,
+                    "abstract": r['abstract']
+                })
+            
+            context_str = "\n\n".join(context_list)
+            return context_str, sources
+        except Exception as e:
+            logger.error("Neo4j vector search failed, falling back to local file traversal: %s", e)
+
+    # Local fallback logic
     ranked_df = ranked_df.copy()
     if "evidence_score" not in ranked_df.columns:
         ranked_df["evidence_score"] = 5.0
@@ -173,51 +212,216 @@ def get_graph_rag_context(
     ranked_df: pd.DataFrame,
     contradictions_dict: Dict[str, Any],
     similarity_threshold: float = 0.60,
-    max_papers: int = 8
+    max_papers: int = 8,
+    neo4j_client: Optional[Any] = None,
+    use_tog: bool = False
 ) -> Tuple[str, List[Dict[str, Any]], List[Dict[str, Any]]]:
-    """Retrieve papers matching semantic threshold, sort by evidence score, and traverse contradiction graph."""
-    # 1. Start with Standard retrieval context
-    standard_context, sources = get_standard_rag_context(
-        query, encoder_model, ranked_df, similarity_threshold, max_papers
-    )
-    
-    retrieved_titles = [src["title"].strip().lower() for src in sources]
-    
-    # 2. Gather neighbor relations
-    relations: List[Dict[str, Any]] = []
-    
-    # Scan contradictions, agreements, and partial agreements
-    rel_lists = {
-        "CONTRADICTION": contradictions_dict.get("contradictions", []),
-        "AGREEMENT": contradictions_dict.get("agreements", []),
-        "PARTIAL_AGREEMENT": contradictions_dict.get("partial_agreements", [])
-    }
-    
-    visited_relationships = set()
-    
-    for rel_type, rel_list in rel_lists.items():
-        for r in rel_list:
-            title_a = r.get("claim_a_title", "").strip().lower()
-            title_b = r.get("claim_b_title", "").strip().lower()
+    """Retrieve papers matching semantic threshold, sort by evidence score, and traverse contradiction graph (Neo4j or local JSON)."""
+    # 1. Check if we should use iterative Think-on-Graph (ToG) search
+    if use_tog and neo4j_client and neo4j_client.verify_connection():
+        try:
+            logger.info("Initializing iterative Think-on-Graph (ToG) reasoning loop...")
+            from ..agents.tog_agent import ThinkOnGraphAgent
+            tog_agent = ThinkOnGraphAgent(client=neo4j_client)
             
-            # If relation matches any of our retrieved papers
-            if title_a in retrieved_titles or title_b in retrieved_titles:
-                # Deduplicate by sorting titles to form a unique key
+            # Execute the ToG explorer agent
+            tog_history, sources = tog_agent.run_tog(query=query, max_hops=3, beam_width=2)
+            
+            # Fetch contradiction relationships among claims connected to the visited papers
+            retrieved_titles = [src["title"].strip() for src in sources]
+            relations: List[Dict[str, Any]] = []
+            
+            cypher_claims = """
+            MATCH (p:Paper)-[:EXTRACTED_CLAIM]->(c:Claim)
+            WHERE p.title IN $retrieved_titles
+            MATCH (c)-[r:CONTRADICTS|AGREES|PARTIAL_AGREES]-(other:Claim)
+            RETURN type(r) AS rel_type,
+                   c.claim_text AS claim_a_text,
+                   p.title AS claim_a_title,
+                   other.claim_text AS claim_b_text,
+                   [(other_paper:Paper)-[:EXTRACTED_CLAIM]->(other) | other_paper.title][0] AS claim_b_title,
+                   r.explanation AS explanation,
+                   r.confidence AS confidence,
+                   r.weight AS weight
+            """
+            records = neo4j_client.query_graph(cypher_claims, {"retrieved_titles": retrieved_titles})
+            visited_relationships = set()
+            for rec in records:
+                title_a = rec.get("claim_a_title", "").strip().lower()
+                title_b = rec.get("claim_b_title", "").strip().lower()
                 key = tuple(sorted([title_a, title_b]))
                 if key in visited_relationships:
                     continue
                 visited_relationships.add(key)
-                
                 relations.append({
-                    "type": rel_type,
-                    "claim_a_title": r.get("claim_a_title"),
-                    "claim_a_text": r.get("claim_a_text"),
-                    "claim_b_title": r.get("claim_b_title"),
-                    "claim_b_text": r.get("claim_b_text"),
-                    "explanation": r.get("explanation"),
-                    "confidence": r.get("confidence", 1.0),
-                    "weight": r.get("evidence_weight", 0.0)
+                    "type": rec.get("rel_type"),
+                    "claim_a_title": rec.get("claim_a_title"),
+                    "claim_a_text": rec.get("claim_a_text"),
+                    "claim_b_title": rec.get("claim_b_title"),
+                    "claim_b_text": rec.get("claim_b_text"),
+                    "explanation": rec.get("explanation"),
+                    "confidence": rec.get("confidence", 1.0),
+                    "weight": rec.get("weight", 0.0)
                 })
+                
+            # Query Entity-to-Entity interactions for visited papers
+            entities_context = ""
+            cypher_entities = """
+            MATCH (p:Paper)-[:EXTRACTED_CLAIM]->(c:Claim)-[:MENTIONS]->(e1:Entity)-[r:INTERACTS_WITH]->(e2:Entity)
+            WHERE p.title IN $retrieved_titles
+            RETURN e1.name AS entity_a,
+                   e1.type AS type_a,
+                   e2.name AS entity_b,
+                   e2.type AS type_b,
+                   r.predicate AS predicate,
+                   r.paper_title AS paper_title
+            """
+            ent_records = neo4j_client.query_graph(cypher_entities, {"retrieved_titles": retrieved_titles})
+            if ent_records:
+                lines = ["### GRAPH BIOMEDICAL ENTITIES & INTERACTIONS"]
+                for e_rec in ent_records:
+                    lines.append(
+                        f"- [{e_rec['type_a']}] {e_rec['entity_a']} --[{e_rec['predicate']}]--> [{e_rec['type_b']}] {e_rec['entity_b']} (from Paper: {e_rec['paper_title']})"
+                    )
+                entities_context = "\n".join(lines)
+            
+            # Format the standard references
+            standard_context_list = []
+            for src in sources:
+                sample_size_str = str(int(src["sample_size"])) if (pd.notna(src["sample_size"]) and src["sample_size"] > 0) else "N/A"
+                standard_context_list.append(
+                    f"[Source Paper {src['index']}]\n"
+                    f"Title: {src['title']}\n"
+                    f"Evidence Score: {src['evidence_score']}/10 | Design: {src['design']} | Sample Size: {sample_size_str}\n"
+                    f"Abstract: {src['abstract']}"
+                )
+            
+            full_context_parts = [
+                "\n\n".join(standard_context_list),
+                "### THINK-ON-GRAPH (ToG) REASONING PATHWAY EXPLORATION",
+                tog_history
+            ]
+            
+            if relations:
+                full_context_parts.append("### CONNECTED CONFLICTS & CONSENSUS RELATIONSHIPS")
+                for idx, rel in enumerate(relations, 1):
+                    full_context_parts.append(
+                        f"[Connection {idx} - {rel['type']}]\n"
+                        f"Paper A: {rel['claim_a_title']}\n"
+                        f"Claim A: {rel['claim_a_text']}\n"
+                        f"Paper B: {rel['claim_b_title']}\n"
+                        f"Claim B: {rel['claim_b_text']}\n"
+                        f"Relationship: {rel['type']} | Analyst Confidence: {rel['confidence']} | Avg Evidence Weight: {rel['weight']}\n"
+                        f"Explanation: {rel['explanation']}"
+                    )
+            
+            if entities_context:
+                full_context_parts.append(entities_context)
+                
+            full_context_str = "\n\n".join(full_context_parts)
+            return full_context_str, sources, relations
+        except Exception as e:
+            logger.error("ToG iterative search failed, falling back to standard graph search: %s", e)
+
+    # 2. Start with Standard retrieval context (Fallback)
+    standard_context, sources = get_standard_rag_context(
+        query, encoder_model, ranked_df, similarity_threshold, max_papers, neo4j_client=neo4j_client
+    )
+    
+    retrieved_titles = [src["title"].strip() for src in sources]
+    retrieved_titles_lower = [t.lower() for t in retrieved_titles]
+    
+    relations: List[Dict[str, Any]] = []
+    entities_context = ""
+    
+    # 2. Query Neo4j if available and active
+    if neo4j_client and neo4j_client.verify_connection():
+        try:
+            logger.info("Querying Neo4j Graph Database for relationships...")
+            # Query Claim-to-Claim relationships
+            cypher_claims = """
+            MATCH (p:Paper)-[:EXTRACTED_CLAIM]->(c:Claim)
+            WHERE p.title IN $retrieved_titles
+            MATCH (c)-[r:CONTRADICTS|AGREES|PARTIAL_AGREES]-(other:Claim)
+            RETURN type(r) AS rel_type,
+                   c.claim_text AS claim_a_text,
+                   p.title AS claim_a_title,
+                   other.claim_text AS claim_b_text,
+                   [(other_paper:Paper)-[:EXTRACTED_CLAIM]->(other) | other_paper.title][0] AS claim_b_title,
+                   r.explanation AS explanation,
+                   r.confidence AS confidence,
+                   r.weight AS weight
+            """
+            records = neo4j_client.query_graph(cypher_claims, {"retrieved_titles": retrieved_titles})
+            visited_relationships = set()
+            for rec in records:
+                title_a = rec.get("claim_a_title", "").strip().lower()
+                title_b = rec.get("claim_b_title", "").strip().lower()
+                key = tuple(sorted([title_a, title_b]))
+                if key in visited_relationships:
+                    continue
+                visited_relationships.add(key)
+                relations.append({
+                    "type": rec.get("rel_type"),
+                    "claim_a_title": rec.get("claim_a_title"),
+                    "claim_a_text": rec.get("claim_a_text"),
+                    "claim_b_title": rec.get("claim_b_title"),
+                    "claim_b_text": rec.get("claim_b_text"),
+                    "explanation": rec.get("explanation"),
+                    "confidence": rec.get("confidence", 1.0),
+                    "weight": rec.get("weight", 0.0)
+                })
+                
+            # Query Entity-to-Entity interactions
+            cypher_entities = """
+            MATCH (p:Paper)-[:EXTRACTED_CLAIM]->(c:Claim)-[:MENTIONS]->(e1:Entity)-[r:INTERACTS_WITH]->(e2:Entity)
+            WHERE p.title IN $retrieved_titles
+            RETURN e1.name AS entity_a,
+                   e1.type AS type_a,
+                   e2.name AS entity_b,
+                   e2.type AS type_b,
+                   r.predicate AS predicate,
+                   r.paper_title AS paper_title
+            """
+            ent_records = neo4j_client.query_graph(cypher_entities, {"retrieved_titles": retrieved_titles})
+            if ent_records:
+                lines = ["### GRAPH BIOMEDICAL ENTITIES & INTERACTIONS"]
+                for e_rec in ent_records:
+                    lines.append(
+                        f"- [{e_rec['type_a']}] {e_rec['entity_a']} --[{e_rec['predicate']}]--> [{e_rec['type_b']}] {e_rec['entity_b']} (from Paper: {e_rec['paper_title']})"
+                    )
+                entities_context = "\n".join(lines)
+        except Exception as e:
+            logger.error("Error querying Neo4j. Falling back to local JSON: %s", e)
+            neo4j_client = None
+
+    # Fallback to JSON-based relationship dictionary traversal
+    if not neo4j_client or not relations:
+        visited_relationships = set()
+        rel_lists = {
+            "CONTRADICTS": contradictions_dict.get("contradictions", []),
+            "AGREES": contradictions_dict.get("agreements", []),
+            "PARTIAL_AGREES": contradictions_dict.get("partial_agreements", [])
+        }
+        for rel_type, rel_list in rel_lists.items():
+            for r in rel_list:
+                title_a = r.get("claim_a_title", "").strip().lower()
+                title_b = r.get("claim_b_title", "").strip().lower()
+                if title_a in retrieved_titles_lower or title_b in retrieved_titles_lower:
+                    key = tuple(sorted([title_a, title_b]))
+                    if key in visited_relationships:
+                        continue
+                    visited_relationships.add(key)
+                    relations.append({
+                        "type": rel_type,
+                        "claim_a_title": r.get("claim_a_title"),
+                        "claim_a_text": r.get("claim_a_text"),
+                        "claim_b_title": r.get("claim_b_title"),
+                        "claim_b_text": r.get("claim_b_text"),
+                        "explanation": r.get("explanation"),
+                        "confidence": r.get("confidence", 1.0),
+                        "weight": r.get("evidence_weight", 0.0)
+                    })
 
     # 3. Format Graph Context
     graph_context_list = [standard_context]
@@ -235,6 +439,9 @@ def get_graph_rag_context(
                 f"Explanation: {rel['explanation']}"
             )
             
+    if entities_context:
+        graph_context_list.append(entities_context)
+        
     full_context_str = "\n\n".join(graph_context_list)
     return full_context_str, sources, relations
 

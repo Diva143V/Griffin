@@ -56,7 +56,7 @@ def _refine_sync(api_key, report, instr, gemini_model):
     from src.agents.refinement_agent import refine_report_section
     return refine_report_section(api_key, report, instr, gemini_model)
 
-def _benchmark_sync(question, model_choice):
+def _benchmark_sync(question, model_choice, use_tog=False):
     import time
     from src.core import graph_rag
     from sentence_transformers import SentenceTransformer
@@ -65,15 +65,34 @@ def _benchmark_sync(question, model_choice):
         embeddings_path=os.path.join(DATASET_DIR, "clean_papers_with_embeddings.csv"),
         contradictions_path=os.path.join(DATASET_DIR, "contradictions.json")
     )
-    enc=SentenceTransformer('BAAI/bge-small-en-v1.5')
+    enc = SentenceTransformer('BAAI/bge-small-en-v1.5')
     
-    t=time.time()
+    t = time.time()
     std_ctx, std_src = graph_rag.get_standard_rag_context(question, enc, ranked_df, max_papers=3)
-    std_rt=time.time()-t
+    std_rt = time.time() - t
     std_ans, std_gen = graph_rag.generate_answer(f"Answer using: {std_ctx}\nQ:{question}", model_choice)
-    t2=time.time()
-    graph_ctx, graph_src, graph_rel = graph_rag.get_graph_rag_context(question, enc, ranked_df, contradictions, max_papers=3)
-    graph_rt=time.time()-t2
+    
+    t2 = time.time()
+    # Auto-connect to Neo4j
+    neo_client = None
+    try:
+        from src.core.neo4j_client import Neo4jClient
+        client = Neo4jClient()
+        if client.connect():
+            neo_client = client
+    except Exception:
+        pass
+
+    graph_ctx, graph_src, graph_rel = graph_rag.get_graph_rag_context(
+        question, enc, ranked_df, contradictions, max_papers=3, neo4j_client=neo_client, use_tog=use_tog
+    )
+    if neo_client:
+        try:
+            neo_client.close()
+        except Exception:
+            pass
+
+    graph_rt = time.time() - t2
     graph_ans, graph_gen = graph_rag.generate_answer(f"Answer using: {graph_ctx}\nQ:{question}", model_choice)
     return {
         "std_ans": std_ans, "std_lat": f"{std_rt+std_gen:.1f}s", "std_cit": str(len(std_src)), "std_words": str(len(std_ans.split())), "std_sources_data": std_src,
@@ -81,32 +100,121 @@ def _benchmark_sync(question, model_choice):
     }
 
 def _graph_sync():
-    con_path=os.path.join(DATASET_DIR,"contradictions.json")
-    if not os.path.exists(con_path): return None
+    # Attempt to load from Neo4j first to support research-class entities
+    try:
+        from src.core.neo4j_client import Neo4jClient
+        client = Neo4jClient()
+        if client.connect():
+            # Query claim relationships
+            cypher_claims = """
+            MATCH (c1:Claim)-[r:CONTRADICTS|AGREES|PARTIAL_AGREES]->(c2:Claim)
+            RETURN c1.claim_text AS text1, c2.claim_text AS text2, type(r) AS rel_type
+            LIMIT 30
+            """
+            claim_records = client.query_graph(cypher_claims)
+            
+            # Query entity interactions
+            cypher_entities = """
+            MATCH (e1:Entity)-[r:INTERACTS_WITH]->(e2:Entity)
+            RETURN e1.name AS ent1, e1.type AS type1, e2.name AS ent2, e2.type AS type2, r.predicate AS pred
+            LIMIT 35
+            """
+            ent_records = client.query_graph(cypher_entities)
+            client.close()
+            
+            if claim_records or ent_records:
+                G = nx.Graph()
+                for rec in claim_records:
+                    a = (rec["text1"][:35] + "...").strip()
+                    b = (rec["text2"][:35] + "...").strip()
+                    rel_type = rec["rel_type"].upper()
+                    color = "red" if rel_type == "CONTRADICTS" else ("green" if rel_type == "AGREES" else "orange")
+                    G.add_node(a, type="Claim")
+                    G.add_node(b, type="Claim")
+                    G.add_edge(a, b, color=color)
+                    
+                for rec in ent_records:
+                    a = rec["ent1"]
+                    b = rec["ent2"]
+                    G.add_node(a, type=rec["type1"])
+                    G.add_node(b, type=rec["type2"])
+                    G.add_edge(a, b, color="cyan")
+                    
+                if len(G.nodes) > 0:
+                    pos = nx.spring_layout(G, k=0.5, iterations=50)
+                    traces = []
+                    for u, v, d in G.edges(data=True):
+                        x0, y0 = pos[u]
+                        x1, y1 = pos[v]
+                        traces.append(go.Scatter(x=[x0, x1, None], y=[y0, y1, None], line=dict(width=1.5, color=d.get('color', '#888')), mode='lines', hoverinfo='none'))
+                    
+                    nx_, ny_, nt, nc = [], [], [], []
+                    type_colors = {
+                        "Claim": "#818CF8",
+                        "Chemical": "#10B981",
+                        "Target": "#EC4899",
+                        "Disease": "#EF4444",
+                        "Symptom": "#F59E0B",
+                        "Organism": "#8B5CF6"
+                    }
+                    for n, ndata in G.nodes(data=True):
+                        x, y = pos[n]
+                        nx_.append(x)
+                        ny_.append(y)
+                        nt.append(str(n))
+                        nc.append(type_colors.get(ndata.get("type", "Claim"), "#818CF8"))
+                        
+                    traces.append(go.Scatter(
+                        x=nx_, y=ny_, mode='markers+text', text=nt, textposition="bottom center",
+                        textfont=dict(size=9, color="#c9d1d9"),
+                        marker=dict(size=12, color=nc, line_width=2, line_color="white")
+                    ))
+                    fig = go.Figure(data=traces, layout=go.Layout(
+                        title='Neo4j Knowledge Graph (Claims & Entity Networks)',
+                        showlegend=False, hovermode='closest', margin=dict(b=20, l=5, r=5, t=40),
+                        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)'
+                    ))
+                    return fig
+    except Exception:
+        pass
+
+    # JSON File Fallback
+    con_path = os.path.join(DATASET_DIR, "contradictions.json")
+    if not os.path.exists(con_path):
+        return None
     with open(con_path, "r") as f:
         data = json.load(f)
-    G=nx.Graph()
-    def add(items,color):
+    G = nx.Graph()
+    def add(items, color):
         for it in items[:50]:
-            a=(it.get("claim_a_title","Unknown A")[:40]+"...").strip()
-            b=(it.get("claim_b_title","Unknown B")[:40]+"...").strip()
-            G.add_node(a); G.add_node(b)
-            G.add_edge(a,b,color=color)
-    add(data.get("agreements",[]),"green")
-    add(data.get("partial_agreements",[]),"orange")
-    add(data.get("contradictions",[]),"red")
-    if len(G.nodes)==0: G.add_node("No Data")
-    pos=nx.spring_layout(G,k=0.5,iterations=50)
-    traces=[]
-    for u,v,d in G.edges(data=True):
-        x0,y0=pos[u]; x1,y1=pos[v]
-        traces.append(go.Scatter(x=[x0,x1,None],y=[y0,y1,None],line=dict(width=1.5,color=d.get('color','#888')),mode='lines',hoverinfo='none'))
-    nx_,ny_,nt=[],[],[]
+            a = (it.get("claim_a_title", "Unknown A")[:40] + "...").strip()
+            b = (it.get("claim_b_title", "Unknown B")[:40] + "...").strip()
+            G.add_node(a)
+            G.add_node(b)
+            G.add_edge(a, b, color=color)
+    add(data.get("agreements", []), "green")
+    add(data.get("partial_agreements", []), "orange")
+    add(data.get("contradictions", []), "red")
+    if len(G.nodes) == 0:
+        G.add_node("No Data")
+    pos = nx.spring_layout(G, k=0.5, iterations=50)
+    traces = []
+    for u, v, d in G.edges(data=True):
+        x0, y0 = pos[u]
+        x1, y1 = pos[v]
+        traces.append(go.Scatter(x=[x0, x1, None], y=[y0, y1, None], line=dict(width=1.5, color=d.get('color', '#888')), mode='lines', hoverinfo='none'))
+    nx_, ny_, nt = [], [], []
     for n in G.nodes():
-        x,y=pos[n]; nx_.append(x); ny_.append(y); nt.append(str(n))
-    traces.append(go.Scatter(x=nx_,y=ny_,mode='markers+text',text=nt,textposition="bottom center",textfont=dict(size=9,color="#c9d1d9"),marker=dict(size=12,color="#4F46E5",line_width=2,line_color="white")))
-    fig=go.Figure(data=traces,layout=go.Layout(title='Knowledge Graph',showlegend=False,hovermode='closest',margin=dict(b=20,l=5,r=5,t=40),xaxis=dict(showgrid=False,zeroline=False,showticklabels=False),yaxis=dict(showgrid=False,zeroline=False,showticklabels=False),paper_bgcolor='rgba(0,0,0,0)',plot_bgcolor='rgba(0,0,0,0)'))
+        x, y = pos[n]
+        nx_.append(x)
+        ny_.append(y)
+        nt.append(str(n))
+    traces.append(go.Scatter(x=nx_, y=ny_, mode='markers+text', text=nt, textposition="bottom center", textfont=dict(size=9, color="#c9d1d9"), marker=dict(size=12, color="#4F46E5", line_width=2, line_color="white")))
+    fig = go.Figure(data=traces, layout=go.Layout(title='Knowledge Graph', showlegend=False, hovermode='closest', margin=dict(b=20, l=5, r=5, t=40), xaxis=dict(showgrid=False, zeroline=False, showticklabels=False), yaxis=dict(showgrid=False, zeroline=False, showticklabels=False), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)'))
     return fig
+
 
 def _run_synthesis_sync(query, model_name, options):
     from src.agents.consensus_agent import analyze_consensus
@@ -316,6 +424,7 @@ class State(rx.State):
     show_contradict: bool = True
     show_neutral: bool = True
 
+    use_tog: bool = False
     eval_question: str = ""
     eval_running: bool = False
     std_latency: str = "--"
@@ -352,6 +461,18 @@ class State(rx.State):
     consensus_report: str = ""
     experiment_protocol: str = ""
     eln_entry: str = ""
+    eln_url: str = "http://localhost:9000"
+    eln_username: str = "admin"
+    eln_password: str = "admin"
+    eln_project_id: str = "1"
+    eln_notebook_id: str = "2"
+    eln_exporting: bool = False
+    eln_export_status: str = ""
+    eln_chat_input: str = ""
+    eln_chat_history: list[dict[str, str]] = [
+        {"role": "assistant", "content": "Hello! I am your local ELN Controller Agent. Tell me what you'd like to query, list, create, or update in your Indigo-ELN instance."}
+    ]
+    eln_chat_running: bool = False
     fetched_sources: list[dict[str, Any]] = []
     matched_claims: list[dict[str, Any]] = []
     graph_relations_trace: list[dict[str, Any]] = []
@@ -536,6 +657,20 @@ class State(rx.State):
     def set_show_neutral(self, val: bool): self.show_neutral = val
     @rx.event
     def set_eval_question(self, val: str): self.eval_question = val
+    @rx.event
+    def set_use_tog(self, val: bool): self.use_tog = val
+    @rx.event
+    def set_eln_url(self, val: str): self.eln_url = val
+    @rx.event
+    def set_eln_username(self, val: str): self.eln_username = val
+    @rx.event
+    def set_eln_password(self, val: str): self.eln_password = val
+    @rx.event
+    def set_eln_project_id(self, val: str): self.eln_project_id = val
+    @rx.event
+    def set_eln_notebook_id(self, val: str): self.eln_notebook_id = val
+    @rx.event
+    def set_eln_chat_input(self, val: str): self.eln_chat_input = val
     @rx.event
     def set_refine_instruction(self, val: str): self.refine_instruction = val
     @rx.event
@@ -895,6 +1030,94 @@ class State(rx.State):
                 self.synthesis_report = format_reasoning_text(raw_text, self.llm_reasoning_mode)
         else:
             self.synthesis_report = "Report not found. Did you run the pipeline yet?"
+
+    @rx.event
+    def export_eln_to_indigo(self):
+        self.eln_exporting = True
+        self.eln_export_status = "Exporting to Indigo-ELN..."
+        yield
+
+        import requests
+        try:
+            session = requests.Session()
+            login_data = {
+                "j_username": self.eln_username,
+                "j_password": self.eln_password
+            }
+            # 1. Login
+            login_resp = session.post(f"{self.eln_url}/api/authentication", data=login_data, timeout=10)
+            if login_resp.status_code != 200:
+                self.eln_export_status = f"Auth failed (HTTP {login_resp.status_code})"
+                self.eln_exporting = False
+                return
+
+            # 2. Create Experiment
+            experiment_name = f"Griffin Synthesis Log - {self.query or 'Experiment'}"
+            experiment_payload = {
+                "name": experiment_name,
+                "parentId": self.eln_notebook_id
+            }
+            create_url = f"{self.eln_url}/api/projects/{self.eln_project_id}/notebooks/{self.eln_notebook_id}/experiments"
+            create_resp = session.post(create_url, json=experiment_payload, timeout=10)
+            if create_resp.status_code not in [200, 201]:
+                self.eln_export_status = f"Create Experiment failed (HTTP {create_resp.status_code})"
+                self.eln_exporting = False
+                return
+
+            experiment_data = create_resp.json()
+            experiment_id = experiment_data.get("id")
+
+            # 3. Upload File
+            upload_url = f"{self.eln_url}/api/experiment_files"
+            params = {
+                "projectId": self.eln_project_id,
+                "notebookId": self.eln_notebook_id,
+                "experimentId": experiment_id
+            }
+            files = {
+                "file": ("griffin_eln_entry.md", self.eln_entry.encode("utf-8"), "text/markdown")
+            }
+            upload_resp = session.post(upload_url, params=params, files=files, timeout=15)
+            if upload_resp.status_code in [200, 201]:
+                self.eln_export_status = f"Successfully exported! Created Experiment ID: {experiment_id}"
+            else:
+                self.eln_export_status = f"File upload failed (HTTP {upload_resp.status_code})"
+        except Exception as e:
+            self.eln_export_status = f"Error: {str(e)}"
+
+        self.eln_exporting = False
+        yield
+
+    @rx.event
+    def send_eln_chat_message(self):
+        if not self.eln_chat_input.strip():
+            return
+        
+        user_msg = self.eln_chat_input.strip()
+        self.eln_chat_history.append({"role": "user", "content": user_msg})
+        self.eln_chat_input = ""
+        self.eln_chat_running = True
+        yield
+
+        from src.agents.eln_controller_agent import execute_eln_agent
+        import asyncio
+        
+        model = self.global_model_choice if self.use_global_model else self.model_routing.get("experiment_planner", "llama3.1:8b")
+        
+        try:
+            agent_response = execute_eln_agent(
+                prompt=user_msg,
+                server_url=self.eln_url,
+                username=self.eln_username,
+                password=self.eln_password,
+                model_name=model
+            )
+        except Exception as e:
+            agent_response = f"Agent failed: {str(e)}"
+            
+        self.eln_chat_history.append({"role": "assistant", "content": agent_response})
+        self.eln_chat_running = False
+        yield
             
     def load_auxiliary_reports(self):
         for attr, fname in [
@@ -1023,7 +1246,7 @@ class State(rx.State):
         yield
         loop = asyncio.get_running_loop()
         mc = self.global_model_choice if self.use_global_model else self.get_actual_model_routing.get("synthesis", "llama3.1:8b")
-        res = await loop.run_in_executor(None, _benchmark_sync, self.eval_question, mc)
+        res = await loop.run_in_executor(None, _benchmark_sync, self.eval_question, mc, self.use_tog)
         self.std_latency = res["std_lat"]
         self.std_citations = res["std_cit"]
         self.std_ans = format_reasoning_text(res["std_ans"], self.llm_reasoning_mode)
@@ -1631,7 +1854,58 @@ def tab0_content():
                 rx.heading("🧪 Experiment Protocol Draft", size="5", style={"fontFamily": _FONT_DISPLAY}),
                 rx.card(rx.markdown(State.experiment_protocol), **_card_style),
                 rx.heading("📓 ELN Lab Record Log", size="5", style={"fontFamily": _FONT_DISPLAY}),
-                rx.card(rx.markdown(State.eln_entry), **_card_style),
+                rx.card(
+                    rx.vstack(
+                        rx.markdown(State.eln_entry),
+                        rx.divider(margin_y="4"),
+                        rx.heading("📤 Export to Local Indigo-ELN", size="3", style={"fontFamily": _FONT_DISPLAY}),
+                        rx.hstack(
+                            rx.vstack(
+                                rx.text("Server URL", size="1", color="gray"),
+                                rx.input(value=State.eln_url, on_change=State.set_eln_url, size="2", width="220px"),
+                                align_items="start"
+                            ),
+                            rx.vstack(
+                                rx.text("Username", size="1", color="gray"),
+                                rx.input(value=State.eln_username, on_change=State.set_eln_username, size="2", width="120px"),
+                                align_items="start"
+                            ),
+                            rx.vstack(
+                                rx.text("Password", size="1", color="gray"),
+                                rx.input(value=State.eln_password, on_change=State.set_eln_password, type="password", size="2", width="120px"),
+                                align_items="start"
+                            ),
+                            rx.vstack(
+                                rx.text("Project ID", size="1", color="gray"),
+                                rx.input(value=State.eln_project_id, on_change=State.set_eln_project_id, size="2", width="80px"),
+                                align_items="start"
+                            ),
+                            rx.vstack(
+                                rx.text("Notebook ID", size="1", color="gray"),
+                                rx.input(value=State.eln_notebook_id, on_change=State.set_eln_notebook_id, size="2", width="80px"),
+                                align_items="start"
+                            ),
+                            align_items="end",
+                            spacing="3",
+                            wrap="wrap"
+                        ),
+                        rx.hstack(
+                            rx.button(
+                                "Export to Indigo-ELN",
+                                on_click=State.export_eln_to_indigo,
+                                loading=State.eln_exporting,
+                                color_scheme="indigo"
+                            ),
+                            rx.text(State.eln_export_status, size="2", color="gray"),
+                            margin_top="3",
+                            align_items="center",
+                            spacing="4"
+                        ),
+                        width="100%",
+                        align_items="stretch"
+                    ),
+                    **_card_style
+                ),
                 spacing="4",
                 width="100%",
                 margin_top="5",
@@ -1858,6 +2132,7 @@ def tab_eval_content():
                 radius="large",
                 style={"minWidth": "320px", "flex": "1", "minHeight": "42px", "fontFamily": _FONT},
             ),
+            rx.checkbox("Iterative ToG", checked=State.use_tog, on_change=State.set_use_tog, style={"fontFamily": _FONT}),
             rx.button("Run Benchmark", on_click=State.run_benchmark, loading=State.eval_running, **_btn_primary),
             align_items="center",
             spacing="3",
@@ -2070,6 +2345,113 @@ def tab7_content():
         padding="4",
     )
 
+def tab8_content():
+    return rx.vstack(
+        _page_header("📓 ELN Chatbot Controller", "Direct your local LLM to query, list, create, or update data inside your active Indigo-ELN book."),
+        rx.hstack(
+            rx.card(
+                rx.vstack(
+                    rx.heading("⚙️ ELN Connection Settings", size="4", style={"fontFamily": _FONT_DISPLAY}),
+                    rx.text("Verify connection details so the agent can interact with your running ELN instance.", size="2", color="gray"),
+                    rx.divider(),
+                    rx.vstack(
+                        rx.text("Server URL", size="1", color="gray"),
+                        rx.input(value=State.eln_url, on_change=State.set_eln_url, size="2", width="100%"),
+                        align_items="start",
+                        width="100%"
+                    ),
+                    rx.vstack(
+                        rx.text("Username", size="1", color="gray"),
+                        rx.input(value=State.eln_username, on_change=State.set_eln_username, size="2", width="100%"),
+                        align_items="start",
+                        width="100%"
+                    ),
+                    rx.vstack(
+                        rx.text("Password", size="1", color="gray"),
+                        rx.input(value=State.eln_password, on_change=State.set_eln_password, type="password", size="2", width="100%"),
+                        align_items="start",
+                        width="100%"
+                    ),
+                    spacing="3",
+                    width="100%"
+                ),
+                width="320px",
+                style={
+                    "background": "rgba(15,23,42,0.45)",
+                    "border": "1px solid rgba(148,163,184,0.12)",
+                    "padding": "20px",
+                    "borderRadius": "16px"
+                }
+            ),
+            rx.card(
+                rx.vstack(
+                    rx.box(
+                        rx.foreach(
+                            State.eln_chat_history,
+                            lambda msg: rx.box(
+                                rx.markdown(msg["content"]),
+                                style={
+                                    "alignSelf": rx.cond(msg["role"] == "user", "flex-end", "flex-start"),
+                                    "background": rx.cond(msg["role"] == "user", "rgba(79,70,229,0.35)", "rgba(30,41,59,0.55)"),
+                                    "border": rx.cond(msg["role"] == "user", "1px solid rgba(129,140,248,0.3)", "1px solid rgba(148,163,184,0.1)"),
+                                    "borderRadius": "12px",
+                                    "padding": "12px",
+                                    "marginBottom": "12px",
+                                    "fontSize": "14px",
+                                    "fontFamily": _FONT,
+                                }
+                            )
+                        ),
+                        width="100%",
+                        height="400px",
+                        overflow_y="auto",
+                        style={
+                            "display": "flex",
+                            "flexDirection": "column",
+                            "padding": "10px",
+                        }
+                    ),
+                    rx.hstack(
+                        rx.input(
+                            value=State.eln_chat_input,
+                            placeholder="Ask the local LLM agent to create experiments, list projects, etc...",
+                            on_change=State.set_eln_chat_input,
+                            size="3",
+                            radius="large",
+                            style={"flex": "1", "fontFamily": _FONT},
+                        ),
+                        rx.button(
+                            "Send",
+                            on_click=State.send_eln_chat_message,
+                            loading=State.eln_chat_running,
+                            color_scheme="indigo"
+                        ),
+                        width="100%",
+                        spacing="3",
+                        align_items="center"
+                    ),
+                    width="100%",
+                    align_items="stretch"
+                ),
+                flex="1",
+                style={
+                    "background": "rgba(15,23,42,0.45)",
+                    "border": "1px solid rgba(148,163,184,0.12)",
+                    "padding": "20px",
+                    "borderRadius": "16px"
+                }
+            ),
+            width="100%",
+            spacing="5",
+            align_items="stretch"
+        ),
+        spacing="3",
+        padding="6",
+        width="100%",
+        max_width="1200px",
+        style={"fontFamily": _FONT},
+    )
+
 def main_content():
     return rx.box(
         rx.vstack(
@@ -2108,6 +2490,7 @@ def main_content():
                     rx.tabs.trigger("🧐 Overseer", value="tab6", **_tab_trigger),
                     rx.tabs.trigger("🕸️ GraphRAG", value="tab3", **_tab_trigger),
                     rx.tabs.trigger("🛠️ Auxiliary", value="tab7", **_tab_trigger),
+                    rx.tabs.trigger("📓 ELN Chat", value="tab8", **_tab_trigger),
                     wrap="wrap",
                     style={
                         "gap": "8px",
@@ -2128,6 +2511,7 @@ def main_content():
                 rx.tabs.content(tab_eval_content(), value="eval"),
                 rx.tabs.content(tab6_content(), value="tab6"),
                 rx.tabs.content(tab7_content(), value="tab7"),
+                rx.tabs.content(tab8_content(), value="tab8"),
                 default_value="tab0",
                 width="100%",
             ),

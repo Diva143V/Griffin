@@ -148,60 +148,44 @@ def main() -> None:
     print(f"Embeddings generated with model '{args.model}'")
     print(f"Saved {args.output}")
 
-    # 5. Automatically and incrementally upsert into Chroma DB
+    # 5. Automatically and incrementally upsert into Neo4j
     if not args.skip_chroma:
-        print(f"Initializing Chroma DB client at '{args.db_path}'...")
-        os.makedirs(args.db_path, exist_ok=True)
-        chroma_client = chromadb.PersistentClient(path=args.db_path)
-        
-        # Create/Get the collection
-        collection = chroma_client.get_or_create_collection(
-            name=args.collection,
-            metadata={"hnsw:space": "cosine"}
-        )
-
-        documents: List[str] = []
-        ids: List[str] = []
-        metadatas: List[Dict[str, Any]] = []
-        
-        for idx, row in df.iterrows():
-            doc_text = row["embedding_text"]
-            if not doc_text:
-                continue
+        print("Connecting to Neo4j database...")
+        from src.core.neo4j_client import Neo4jClient
+        client = Neo4jClient()
+        if client.connect():
+            try:
+                client.setup_constraints()
+                print("Constraints and indexes configured. Starting paper ingestion...")
                 
-            # Extract metadata
-            metadata = {}
-            for col in df.columns:
-                if col not in ["embedding", "embedding_key", "embedding_text", "embedding_model", "embedding_created_at"]:
-                    val = row[col]
-                    if pd.isna(val):
+                count = 0
+                for idx, row in df.iterrows():
+                    title = str(row.get("title", "")).strip()
+                    abstract = str(row.get("abstract", "")).strip()
+                    evidence_score = float(row.get("evidence_score", 5.0)) if "evidence_score" in row and pd.notna(row.get("evidence_score")) else 5.0
+                    study_design = str(row.get("study_design", "Undetermined")) if "study_design" in row and pd.notna(row.get("study_design")) else "Undetermined"
+                    sample_size = int(row.get("sample_size", 0)) if "sample_size" in row and pd.notna(row.get("sample_size")) else 0
+                    emb = embeddings[idx]
+                    
+                    if not title:
                         continue
-                    if isinstance(val, (int, float, str, bool)):
-                        metadata[col] = val
-                    else:
-                        metadata[col] = str(val)
-
-            # Unique key: Prefer pmid or doi, fallback to row indices
-            paper_id = str(row.get("pmid", "")) or str(row.get("doi", "")) or f"paper_{idx}"
-            paper_id = str(paper_id).strip()
-            if not paper_id or paper_id == "nan":
-                paper_id = f"paper_{idx}"
-
-            documents.append(doc_text)
-            ids.append(paper_id)
-            metadatas.append(metadata)
-
-        if documents:
-            print(f"Upserting {len(documents)} papers to Chroma DB collection '{args.collection}'...")
-            collection.upsert(
-                ids=ids,
-                embeddings=embeddings,
-                metadatas=metadatas,
-                documents=documents
-            )
-            print("Chroma DB updated successfully.")
+                        
+                    client.ingest_paper(
+                        title=title,
+                        evidence_score=evidence_score,
+                        study_design=study_design,
+                        sample_size=sample_size,
+                        embedding=emb,
+                        abstract=abstract
+                    )
+                    count += 1
+                print(f"Successfully upserted {count} papers and embeddings to Neo4j.")
+            except Exception as e:
+                print(f"Error during Neo4j ingestion: {e}")
+            finally:
+                client.close()
         else:
-            print("No papers to upsert to Chroma DB.")
+            print("Warning: Could not connect to Neo4j. Skipping database sync.")
 
 
 if __name__ == "__main__":

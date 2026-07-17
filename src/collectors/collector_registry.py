@@ -20,6 +20,7 @@ from .collect_chembl import collect as collect_chembl
 from .collect_uniprot import collect as collect_uniprot
 from .collect_pubchem import collect as collect_pubchem
 from .collect_dbsnp import collect as collect_dbsnp
+from .collect_duckduckgo import collect as collect_duckduckgo
 
 
 @dataclass(frozen=True)
@@ -150,6 +151,17 @@ DEFAULT_COLLECTORS: Dict[str, CollectorSpec] = {
             page_size=getattr(args, "dbsnp_limit", 5),
             max_pages=1,
             email=getattr(args, "email", ""),
+        ),
+    ),
+    "DuckDuckGo": CollectorSpec(
+        name="DuckDuckGo",
+        output_path="dataset/duckduckgo.csv",
+        priority=10,
+        description="DuckDuckGo web search collector",
+        runner=lambda query, args: collect_duckduckgo(
+            query,
+            limit=getattr(args, "duckduckgo_limit", 10),
+            rate_limit_sec=getattr(args, "duckduckgo_rate_limit", 0.5),
         ),
     ),
 }

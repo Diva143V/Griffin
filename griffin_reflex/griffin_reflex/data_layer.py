@@ -172,7 +172,52 @@ def get_papers(limit: int = 24, search: str = "") -> List[Dict[str, str]]:
 
 
 def get_knowledge_graph() -> Tuple[List[Dict[str, str]], List[Dict[str, str]]]:
-    """Nodes/edges derived from contradiction pairs (real claim titles)."""
+    """Nodes/edges derived from contradiction pairs (real claim titles) or Neo4j database."""
+    # Try querying Neo4j first
+    try:
+        from src.core.neo4j_client import Neo4jClient
+        client = Neo4jClient()
+        if client.connect():
+            # Query claim relationships
+            cypher_claims = """
+            MATCH (c1:Claim)-[r:CONTRADICTS|AGREES|PARTIAL_AGREES]->(c2:Claim)
+            RETURN c1.claim_text AS text1, c2.claim_text AS text2, type(r) AS rel_type
+            LIMIT 40
+            """
+            claim_records = client.query_graph(cypher_claims)
+            
+            # Query entity interactions
+            cypher_entities = """
+            MATCH (e1:Entity)-[r:INTERACTS_WITH]->(e2:Entity)
+            RETURN e1.name AS ent1, e1.type AS type1, e2.name AS ent2, e2.type AS type2, r.predicate AS pred
+            LIMIT 30
+            """
+            ent_records = client.query_graph(cypher_entities)
+            client.close()
+            
+            if claim_records or ent_records:
+                nodes: Dict[str, Dict[str, str]] = {}
+                edges: List[Dict[str, str]] = []
+                
+                for rec in claim_records:
+                    a = rec["text1"][:60]
+                    b = rec["text2"][:60]
+                    nodes[a] = {"id": a, "label": a, "type": "Claim"}
+                    nodes[b] = {"id": b, "label": b, "type": "Claim"}
+                    edges.append({"source": a, "target": b, "label": rec["rel_type"].lower()})
+                    
+                for rec in ent_records:
+                    a = rec["ent1"]
+                    b = rec["ent2"]
+                    nodes[a] = {"id": a, "label": a, "type": rec["type1"]}
+                    nodes[b] = {"id": b, "label": b, "type": rec["type2"]}
+                    edges.append({"source": a, "target": b, "label": rec["pred"]})
+                    
+                return list(nodes.values())[:30], edges[:40]
+    except Exception:
+        pass
+
+    # JSON File Fallback
     data = _load_contradictions()
     nodes: Dict[str, Dict[str, str]] = {}
     edges: List[Dict[str, str]] = []

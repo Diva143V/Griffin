@@ -69,10 +69,23 @@ def chat(
     if think_flag is not None:
         call_kwargs["think"] = think_flag
 
-    return ollama.chat(
-        model=model,
-        messages=messages,
-        options=resolve_options(task, options, user_options),
-        keep_alive=keep_alive,
-        **call_kwargs,
-    )
+    try:
+        return ollama.chat(
+            model=model,
+            messages=messages,
+            options=resolve_options(task, options, user_options),
+            keep_alive=keep_alive,
+            **call_kwargs,
+        )
+    except TypeError as e:
+        if "think" in call_kwargs and "unexpected keyword argument 'think'" in str(e):
+            call_kwargs.pop("think", None)
+            return ollama.chat(
+                model=model,
+                messages=messages,
+                options=resolve_options(task, options, user_options),
+                keep_alive=keep_alive,
+                **call_kwargs,
+            )
+        raise
+

@@ -105,7 +105,8 @@ def merge_and_dedup(output: str, max_results: int | None = None) -> pd.DataFrame
         "ChEMBL": 6,
         "UniProt": 7,
         "PubChem": 8,
-        "dbSNP": 9
+        "dbSNP": 9,
+        "DuckDuckGo": 10
     }
     all_papers["source_priority"] = all_papers.get("source", "").map(priority).fillna(99)
     all_papers = all_papers.sort_values(["source_priority"], ascending=True)
@@ -157,6 +158,7 @@ def main() -> None:
     parser.add_argument("--openalex-per-page", type=int, default=20)
     parser.add_argument("--openalex-max-pages", type=int, default=2)
     parser.add_argument("--openalex-rate-limit", type=float, default=1.0)
+    parser.add_argument("--duckduckgo-limit", type=int, default=10)
 
     parser.add_argument("--max-results", type=int, default=100)
     parser.add_argument("--collector-limits", default="{}", help="JSON string mapping collector names to limits")
