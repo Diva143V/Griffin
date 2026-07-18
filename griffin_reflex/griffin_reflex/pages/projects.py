@@ -3,7 +3,7 @@ import os
 from griffin_reflex.styles.theme import COLORS, FONTS
 from griffin_reflex.components.sidebar import sidebar
 from griffin_reflex.components.ui import page_shell, premium_card, section_header
-from griffin_reflex.data_layer import DATASET_DIR, get_dashboard_metrics, load_research_goal
+from griffin_reflex.data_layer import get_dashboard_metrics, load_research_goal
 
 class ProjectsState(rx.State):
     goal: str = ""
