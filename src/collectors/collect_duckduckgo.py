@@ -6,7 +6,7 @@ import time
 from typing import List
 
 import pandas as pd
-from duckduckgo_search import DDGS
+from ddgs import DDGS
 
 
 def collect(query: str, limit: int = 10, rate_limit_sec: float = 0.5) -> pd.DataFrame:

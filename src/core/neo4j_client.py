@@ -66,6 +66,8 @@ class Neo4jClient:
             "CREATE CONSTRAINT paper_title_unique IF NOT EXISTS FOR (p:Paper) REQUIRE p.title IS UNIQUE",
             "CREATE CONSTRAINT claim_id_unique IF NOT EXISTS FOR (c:Claim) REQUIRE c.id IS UNIQUE",
             "CREATE CONSTRAINT entity_name_unique IF NOT EXISTS FOR (e:Entity) REQUIRE e.name IS UNIQUE",
+            "CREATE CONSTRAINT query_text_unique IF NOT EXISTS FOR (q:Query) REQUIRE q.text IS UNIQUE",
+            "CREATE CONSTRAINT report_composite_unique IF NOT EXISTS FOR (r:Report) REQUIRE (r.type, r.query_text) IS UNIQUE",
             # Native Vector Index for Paper embeddings (384-dimensional cosine similarity index)
             """
             CREATE VECTOR INDEX paper_embeddings IF NOT EXISTS
@@ -230,6 +232,83 @@ class Neo4jClient:
                 entity_b_name=entity_b_name,
                 entity_b_type=entity_b_type,
                 predicate=predicate,
+                paper_title=paper_title,
+            )
+
+    def ingest_query(
+        self,
+        text: str,
+        intent: str,
+        route: str,
+        model: str,
+        timestamp: str,
+    ):
+        """Merges a Query node representing a pipeline execution."""
+        query = """
+        MERGE (q:Query {text: $text})
+        SET q.intent = $intent,
+            q.route = $route,
+            q.model = $model,
+            q.timestamp = $timestamp
+        """
+        with self.driver.session() as session:
+            session.run(
+                query,
+                text=text,
+                intent=intent,
+                route=route,
+                model=model,
+                timestamp=timestamp,
+            )
+
+    def ingest_report(
+        self,
+        query_text: str,
+        report_type: str,
+        content: str,
+        agent: str,
+        model: str,
+        timestamp: str,
+    ):
+        """Merges a Report node and links it to its starting Query."""
+        query = """
+        MERGE (r:Report {type: $report_type, query_text: $query_text})
+        SET r.content = $content,
+            r.agent = $agent,
+            r.model = $model,
+            r.timestamp = $timestamp
+        WITH r
+        MATCH (q:Query {text: $query_text})
+        MERGE (q)-[:PRODUCED_REPORT]->(r)
+        """
+        with self.driver.session() as session:
+            session.run(
+                query,
+                query_text=query_text,
+                report_type=report_type,
+                content=content,
+                agent=agent,
+                model=model,
+                timestamp=timestamp,
+            )
+
+    def ingest_report_paper_link(
+        self,
+        query_text: str,
+        report_type: str,
+        paper_title: str,
+    ):
+        """Creates a REFERENCES_PAPER link from a Report to a Paper if both exist."""
+        query = """
+        MATCH (r:Report {type: $report_type, query_text: $query_text})
+        MATCH (p:Paper {title: $paper_title})
+        MERGE (r)-[:REFERENCES_PAPER]->(p)
+        """
+        with self.driver.session() as session:
+            session.run(
+                query,
+                query_text=query_text,
+                report_type=report_type,
                 paper_title=paper_title,
             )
 

@@ -31,3 +31,29 @@ MODEL_ROUTING = {
     "synthesis": "llama3.1:8b",
     "experiment_planner": "llama3.1:8b",
 }
+
+# --- Core Paths ---
+DATASET_DIR = "dataset"
+FINAL_PAPERS_PATH = os.path.join(DATASET_DIR, "final_papers.csv")
+CLEAN_PAPERS_PATH = os.path.join(DATASET_DIR, "clean_papers.csv")
+EMBEDDINGS_PATH = os.path.join(DATASET_DIR, "clean_papers_with_embeddings.csv")
+RANKED_PAPERS_PATH = os.path.join(DATASET_DIR, "ranked_papers.csv")
+CLAIMS_PATH = os.path.join(DATASET_DIR, "claims.csv")
+CONTRADICTIONS_PATH = os.path.join(DATASET_DIR, "contradictions.json")
+EXECUTION_TRACE_PATH = os.path.join(DATASET_DIR, "execution_trace.json")
+LAST_RESEARCH_GOAL_PATH = os.path.join(DATASET_DIR, "last_research_goal.txt")
+
+# --- LLM Generated Reports Mapping (Filename -> (Report Type, Agent Name)) ---
+LLM_REPORTS_MAPPING = {
+    "final_synthesis.md": ("synthesis", "Synthesis Generator"),
+    "consensus_report.md": ("consensus", "Consensus Analyst"),
+    "contradictions_report.md": ("contradictions", "Contradiction Detector"),
+    "clinical_report.md": ("clinical", "Clinical Evaluator"),
+    "bias_report.md": ("bias", "Bias Detector"),
+    "methodology_report.md": ("methodology", "Methodology Critic"),
+    "glossary_report.md": ("glossary", "Glossary Generator"),
+    "primer_report.md": ("primer", "Layperson Primer"),
+    "protocol_draft.txt": ("protocol", "Lab Protocol Planner"),
+    "eln_entry.txt": ("eln", "ELN Record Assistant"),
+    "overseer_report.md": ("overseer", "Overseer"),
+}

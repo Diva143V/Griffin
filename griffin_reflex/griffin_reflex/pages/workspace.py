@@ -1,16 +1,15 @@
 import reflex as rx
-
+from griffin_reflex.styles.theme import COLORS, FONTS
 from griffin_reflex.components.sidebar import sidebar
 from griffin_reflex.components.knowledge_graph import knowledge_graph_view
 from griffin_reflex.components.timeline import research_timeline_view
 from griffin_reflex.components.paper_explorer import paper_explorer_view
-from griffin_reflex.components.ui import page_shell
+from griffin_reflex.components.ui import page_shell, section_header
 from griffin_reflex.data_layer import (
     get_papers,
     get_knowledge_graph,
     get_timeline_events,
 )
-
 
 class WorkspaceState(rx.State):
     paper_search: str = ""
@@ -35,28 +34,48 @@ class WorkspaceState(rx.State):
     def search_papers(self):
         self.papers = get_papers(limit=24, search=self.paper_search)
 
-
 def workspace():
+    """Premium workspace dashboard page layout"""
     return page_shell(
         sidebar(active="/workspace"),
         rx.vstack(
-            rx.hstack(
-                rx.heading("Scientific Workspace", size="9"),
-                rx.spacer(),
-                rx.button(
-                    "↻ Reload dataset",
+            # Top Section Header with glowing reload action button
+            section_header(
+                "Scientific Workspace",
+                "Live view of claim relationships, chronology milestones, and curated paper lists.",
+                action=rx.button(
+                    rx.hstack(
+                        rx.icon(tag="rotate-cw", size=16),
+                        rx.text("Reload Dataset"),
+                        spacing="2",
+                    ),
                     on_click=WorkspaceState.load_workspace,
-                    color_scheme="indigo",
-                ),
-                width="100%",
-                align_items="center",
+                    size="3",
+                    style={
+                        "background": f"linear-gradient(135deg, {COLORS['primary']}, {COLORS['secondary']})",
+                        "boxShadow": f"0 4px 15px {COLORS['primary_glow']}",
+                        "border": "none",
+                        "color": "white",
+                        "borderRadius": "12px",
+                        "padding": "0 22px",
+                        "minHeight": "40px",
+                        "cursor": "pointer",
+                        "transition": "all 0.3s ease",
+                        "_hover": {
+                            "transform": "translateY(-2px)",
+                            "boxShadow": f"0 8px 25px {COLORS['primary_glow']}",
+                        }
+                    }
+                )
             ),
-            rx.text(
-                "Live view of papers, claim graph, and timeline from dataset/ artifacts.",
-                color="gray",
-            ),
+            
+            # Interactive Knowledge Graph Visualizer
             knowledge_graph_view(WorkspaceState.kg_nodes, WorkspaceState.kg_edges),
+            
+            # Chronological Discovery Timeline Dot-and-Line layout
             research_timeline_view(WorkspaceState.timeline),
+            
+            # Literature Search & Explorer view
             paper_explorer_view(
                 WorkspaceState.papers,
                 WorkspaceState.paper_search,

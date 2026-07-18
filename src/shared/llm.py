@@ -9,7 +9,8 @@ from typing import Any, Dict, List, Optional
 import ollama
 
 # Keep models resident in VRAM/RAM between calls so we avoid 10-30s cold reloads.
-DEFAULT_KEEP_ALIVE = "30m"
+# Reduced default from 30m to 5m to protect VRAM allocations on 6GB GPUs.
+DEFAULT_KEEP_ALIVE = "5m"
 
 # Task-based generation presets.
 # - Low temperature for deterministic extraction / classification / JSON.
@@ -54,7 +55,7 @@ def chat(
     task: Optional[str] = None,
     options: Optional[Dict[str, Any]] = None,
     user_options: Optional[Dict[str, Any]] = None,
-    keep_alive: str = DEFAULT_KEEP_ALIVE,
+    keep_alive: Optional[str] = None,
     **kwargs,
 ):
     """Drop-in replacement for ollama.chat() with keep_alive + presets baked in.
@@ -69,12 +70,24 @@ def chat(
     if think_flag is not None:
         call_kwargs["think"] = think_flag
 
+    # Dynamic VRAM optimization:
+    # If no explicit keep_alive is requested:
+    # - Release VRAM immediately ("0") for secondary tasks (extract, classify, route)
+    # - Retain warm lifetime (5m) for major synthesis, planner, and consensus tasks
+    if keep_alive is None:
+        if task in ("extract", "classify", "route"):
+            resolved_keep_alive = "0"
+        else:
+            resolved_keep_alive = DEFAULT_KEEP_ALIVE
+    else:
+        resolved_keep_alive = keep_alive
+
     try:
         return ollama.chat(
             model=model,
             messages=messages,
             options=resolve_options(task, options, user_options),
-            keep_alive=keep_alive,
+            keep_alive=resolved_keep_alive,
             **call_kwargs,
         )
     except TypeError as e:
@@ -84,7 +97,7 @@ def chat(
                 model=model,
                 messages=messages,
                 options=resolve_options(task, options, user_options),
-                keep_alive=keep_alive,
+                keep_alive=resolved_keep_alive,
                 **call_kwargs,
             )
         raise

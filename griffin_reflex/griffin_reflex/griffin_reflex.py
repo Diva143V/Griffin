@@ -18,6 +18,9 @@ from griffin_reflex.pages.settings import settings
 from griffin_reflex.pages.dashboard import DashboardState
 from griffin_reflex.pages.workspace import WorkspaceState
 from griffin_reflex.pages.projects import ProjectsState
+from griffin_reflex.components.terminal_ui import terminal_logs_box
+from griffin_reflex.components.benchmark_ui import tab_eval_content
+from griffin_reflex.components.planner_ui import planner_workspace
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
@@ -494,6 +497,18 @@ class State(rx.State):
                 except Exception:
                     pass
 
+        # Load existing dataset files on initial page load
+        self.load_contradictions()
+        self.load_claims()
+        self.load_ranked_evidence()
+        self.load_execution_trace()
+
+    @rx.event
+    async def refresh_installed_models(self):
+        """Manually trigger a reload of local Ollama models in real-time."""
+        loop = asyncio.get_running_loop()
+        self.installed_models = await loop.run_in_executor(None, get_ollama_model_names)
+
     @rx.event
     async def set_api_key(self, val: str): 
         self.api_key = val
@@ -640,9 +655,13 @@ class State(rx.State):
     def close_confirm_dialog(self): self.show_confirm_dialog = False
 
     @rx.event
-    def set_min_evidence_score(self, val: list[float] | list[int]): 
+    def set_min_evidence_score(self, val):
         try:
-            self.min_evidence_score = [int(val[0])]
+            # rx.slider returns a list like [3]; handle both list and scalar
+            if isinstance(val, (list, tuple)):
+                self.min_evidence_score = [int(val[0])]
+            else:
+                self.min_evidence_score = [int(val)]
         except (IndexError, ValueError, TypeError):
             pass
     @rx.event
@@ -680,20 +699,25 @@ class State(rx.State):
 
     @rx.var
     def filtered_ranked_papers(self) -> list[dict[str, str]]:
-        out=[]
+        out = []
+        min_score = float(self.min_evidence_score[0]) if self.min_evidence_score else 1.0
         for row in self.ranked_papers_data:
+            # Score filter — keep rows where score >= min_score
+            # If score is unparseable, include the row (don't silently drop it)
             try:
-                if float(row["score"]) < float(self.min_evidence_score[0]): continue
+                if float(row["score"]) < min_score:
+                    continue
             except Exception:
-                if float(self.min_evidence_score[0]) > 1.0: continue
-            
+                pass  # keep rows with unparseable scores
+
+            # Text search filter
             if self.paper_search_query:
                 query = self.paper_search_query.lower()
                 title = str(row.get("title", "")).lower()
                 abstract = str(row.get("abstract", "")).lower()
                 if query not in title and query not in abstract:
                     continue
-                    
+
             out.append(row)
         return out
 
@@ -860,8 +884,12 @@ class State(rx.State):
             
         self.is_running = False
         self.logs.append("Execution Complete!")
-        
-        # Load execution trace
+        self.load_execution_trace()
+        yield DashboardState.load_metrics
+        yield WorkspaceState.load_workspace
+
+    def load_execution_trace(self):
+        """Loads routing stats, consensus reports, and matched claims from the execution trace."""
         trace_path = os.path.join(DATASET_DIR, "execution_trace.json")
         if os.path.exists(trace_path):
             try:
@@ -944,8 +972,6 @@ class State(rx.State):
                 self.pipeline_trace_visible = True
             except Exception as e:
                 self.logs.append(f"Failed to load execution trace: {e}")
-        yield DashboardState.load_metrics
-        yield WorkspaceState.load_workspace
         
     def execute_backend_pipeline(self):
         import subprocess
@@ -1298,9 +1324,11 @@ class State(rx.State):
 
 
 # ── Design tokens (shared style helpers) ──────────────────────────────────────
-_FONT = "'DM Sans', system-ui, -apple-system, sans-serif"
-_FONT_DISPLAY = "'Outfit', 'DM Sans', system-ui, sans-serif"
-_FONT_MONO = "'JetBrains Mono', ui-monospace, monospace"
+from griffin_reflex.styles.theme import COLORS, FONTS
+
+_FONT = FONTS["body"]
+_FONT_DISPLAY = FONTS["heading"]
+_FONT_MONO = FONTS["mono"]
 
 _SIDEBAR_BG = "linear-gradient(180deg, rgba(11,16,32,0.98) 0%, rgba(7,10,18,0.99) 100%)"
 _PAGE_BG = (
@@ -1309,13 +1337,13 @@ _PAGE_BG = (
     "linear-gradient(180deg, #070a12 0%, #0b1020 100%)"
 )
 _CARD_BG = "linear-gradient(145deg, rgba(17,24,39,0.88) 0%, rgba(11,16,32,0.78) 100%)"
-_CARD_BORDER = "1px solid rgba(148,163,184,0.14)"
+_CARD_BORDER = f"1px solid {COLORS['border']}"
 _EASE = "cubic-bezier(0.22, 1, 0.36, 1)"
 
 _section_label = dict(
     size="2",
     weight="bold",
-    color="var(--accent-11)",
+    color=COLORS["accent"],
     letter_spacing="0.08em",
     style={"textTransform": "uppercase", "fontFamily": _FONT_DISPLAY},
 )
@@ -1324,7 +1352,13 @@ _input_style = dict(
     width="100%",
     size="3",
     radius="large",
-    style={"fontFamily": _FONT, "minHeight": "42px"},
+    style={
+        "fontFamily": _FONT, 
+        "minHeight": "42px",
+        "background": "rgba(15,23,42,0.8)",
+        "border": f"1px solid {COLORS['border']}",
+        "color": COLORS["text_primary"],
+    },
 )
 
 _btn_primary = dict(
@@ -1337,7 +1371,10 @@ _btn_primary = dict(
         "fontWeight": "600",
         "minHeight": "44px",
         "padding": "0 22px",
-        "boxShadow": "0 6px 20px rgba(99,102,241,0.35)",
+        "background": f"linear-gradient(135deg, {COLORS['primary']}, {COLORS['secondary']})",
+        "boxShadow": f"0 6px 20px {COLORS['primary_glow']}",
+        "border": "none",
+        "color": "white",
         "transition": f"all 0.28s {_EASE}",
         "cursor": "pointer",
     },
@@ -1352,6 +1389,9 @@ _btn_ghost = dict(
         "fontFamily": _FONT_DISPLAY,
         "fontWeight": "600",
         "minHeight": "40px",
+        "background": "transparent",
+        "border": f"1px solid {COLORS['border']}",
+        "color": COLORS["text_primary"],
         "transition": f"all 0.25s {_EASE}",
         "cursor": "pointer",
     },
@@ -1375,7 +1415,7 @@ _heading_display = dict(
     style={
         "fontFamily": _FONT_DISPLAY,
         "letterSpacing": "-0.03em",
-        "background": "linear-gradient(120deg, #e0e7ff 0%, #818cf8 45%, #38bdf8 100%)",
+        "background": f"linear-gradient(120deg, {COLORS['text_primary']} 0%, {COLORS['primary']} 45%, {COLORS['accent']} 100%)",
         "WebkitBackgroundClip": "text",
         "WebkitTextFillColor": "transparent",
         "backgroundClip": "text",
@@ -1399,21 +1439,21 @@ _tab_trigger = dict(
 def sidebar():
     return rx.box(
         rx.vstack(
-            # Brand header
+            # Brand header with premium styling
             rx.hstack(
                 rx.box(
-                    rx.text("🧬", size="5"),
+                    rx.text("🧬", font_size="32px"),
                     padding="2",
                     border_radius="12px",
                     style={
-                        "background": "linear-gradient(135deg, rgba(99,102,241,0.3), rgba(56,189,248,0.2))",
-                        "border": "1px solid rgba(129,140,248,0.35)",
-                        "boxShadow": "0 0 20px rgba(99,102,241,0.25)",
+                        "background": f"linear-gradient(135deg, {COLORS['primary']}30, {COLORS['accent']}20)",
+                        "border": f"1px solid {COLORS['primary']}",
+                        "boxShadow": f"0 0 20px {COLORS['primary_glow']}",
                     },
                 ),
                 rx.vstack(
-                    rx.heading("Griffin Bio", size="5", style={"fontFamily": _FONT_DISPLAY, "letterSpacing": "-0.02em"}),
-                    rx.text("Controls", size="1", color="var(--gray-10)", weight="medium"),
+                    rx.heading("Griffin Bio", size="5", style={"fontFamily": _FONT_DISPLAY, "letterSpacing": "-0.02em", "color": COLORS["text_primary"]}),
+                    rx.text("Controls", size="1", color=COLORS["text_secondary"], weight="medium", font_family=_FONT),
                     spacing="0",
                     align_items="flex-start",
                 ),
@@ -1422,7 +1462,11 @@ def sidebar():
                 width="100%",
                 padding_bottom="3",
             ),
-            rx.divider(style={"opacity": "0.4"}),
+            rx.box(
+                height="1px",
+                width="100%",
+                background=f"linear-gradient(90deg, transparent, {COLORS['border']}, transparent)",
+            ),
             rx.scroll_area(
                 rx.vstack(
                     rx.text("🔑 Credentials & Settings", **_section_label),
@@ -1431,8 +1475,25 @@ def sidebar():
                     rx.input(placeholder="Google API Key (Gemini)", type="password", on_change=State.set_api_key, **_input_style),
                     rx.select(State.gemini_model_list, value=State.gemini_model_choice, on_change=State.set_gemini_model_choice, width="100%", size="3"),
 
-                    rx.divider(margin_y="3", style={"opacity": "0.35"}),
-                    rx.text("🤖 LLM Model Routing", **_section_label),
+                    rx.box(
+                        height="1px",
+                        width="100%",
+                        background=f"linear-gradient(90deg, transparent, {COLORS['border']}, transparent)",
+                        margin_y="3",
+                    ),
+                    rx.hstack(
+                        rx.text("🤖 LLM Model Routing", **_section_label),
+                        rx.spacer(),
+                        rx.icon_button(
+                            rx.icon(tag="refresh-cw", size=14),
+                            on_click=State.refresh_installed_models,
+                            variant="ghost",
+                            size="1",
+                            color_scheme="indigo",
+                        ),
+                        width="100%",
+                        align_items="center",
+                    ),
                     rx.checkbox("Global Model", checked=State.use_global_model, on_change=State.set_use_global_model),
                     rx.cond(
                         State.use_global_model,
@@ -1442,17 +1503,17 @@ def sidebar():
                             rx.cond(
                                 State.use_custom_routing,
                                 rx.vstack(
-                                    rx.text("Planner:", size="1", color="var(--gray-11)"),
+                                    rx.text("Planner:", size="1", color=COLORS["text_secondary"]),
                                     rx.select(State.installed_models, value=State.model_routing["planner"], on_change=State.set_route_planner, width="100%"),
-                                    rx.text("Extractor:", size="1", color="var(--gray-11)"),
+                                    rx.text("Extractor:", size="1", color=COLORS["text_secondary"]),
                                     rx.select(State.installed_models, value=State.model_routing["claim_extractor"], on_change=State.set_route_claim_extractor, width="100%"),
-                                    rx.text("Detector:", size="1", color="var(--gray-11)"),
+                                    rx.text("Detector:", size="1", color=COLORS["text_secondary"]),
                                     rx.select(State.installed_models, value=State.model_routing["contradiction_detector"], on_change=State.set_route_contradiction_detector, width="100%"),
-                                    rx.text("Consensus:", size="1", color="var(--gray-11)"),
+                                    rx.text("Consensus:", size="1", color=COLORS["text_secondary"]),
                                     rx.select(State.installed_models, value=State.model_routing["consensus_analyst"], on_change=State.set_route_consensus_analyst, width="100%"),
-                                    rx.text("Synthesis:", size="1", color="var(--gray-11)"),
+                                    rx.text("Synthesis:", size="1", color=COLORS["text_secondary"]),
                                     rx.select(State.installed_models, value=State.model_routing["synthesis"], on_change=State.set_route_synthesis, width="100%"),
-                                    rx.text("Experiment:", size="1", color="var(--gray-11)"),
+                                    rx.text("Experiment:", size="1", color=COLORS["text_secondary"]),
                                     rx.select(State.installed_models, value=State.model_routing["experiment_planner"], on_change=State.set_route_experiment_planner, width="100%"),
                                     spacing="2",
                                     width="100%",
@@ -1463,12 +1524,17 @@ def sidebar():
                         ),
                     ),
 
-                    rx.divider(margin_y="3", style={"opacity": "0.35"}),
+                    rx.box(
+                        height="1px",
+                        width="100%",
+                        background=f"linear-gradient(90deg, transparent, {COLORS['border']}, transparent)",
+                        margin_y="3",
+                    ),
                     rx.text("⚙️ LLM Options", **_section_label),
-                    rx.text(f"Temperature: {State.llm_temperature}", size="2", color="var(--gray-11)"),
+                    rx.text(f"Temperature: {State.llm_temperature}", size="2", color=COLORS["text_secondary"]),
                     rx.slider(default_value=[0.7], min=0.0, max=2.0, step=0.1, on_change=State.set_llm_temperature, width="100%"),
                     rx.select(["2048", "4096", "8192", "16384", "32768", "65536"], value=State.llm_num_ctx, on_change=State.set_llm_num_ctx, width="100%", size="3"),
-                    rx.text("Max output tokens (num_predict)", size="2", weight="bold", color="var(--gray-11)"),
+                    rx.text("Max output tokens (num_predict)", size="2", weight="bold", color=COLORS["text_secondary"]),
                     rx.select(
                         ["1024", "2048", "3072", "4096", "8192"],
                         value=State.llm_num_predict,
@@ -1485,7 +1551,12 @@ def sidebar():
                         size="3",
                     ),
 
-                    rx.divider(margin_y="3", style={"opacity": "0.35"}),
+                    rx.box(
+                        height="1px",
+                        width="100%",
+                        background=f"linear-gradient(90deg, transparent, {COLORS['border']}, transparent)",
+                        margin_y="3",
+                    ),
                     rx.text("💬 Ask the Dataset", **_section_label),
                     rx.select(State.installed_models, value=State.rag_model_choice, on_change=State.set_rag_model_choice, width="100%", size="3"),
                     rx.button("🗑️ Clear Chat", on_click=State.clear_chat_history, **_btn_ghost, width="100%"),
@@ -1602,155 +1673,10 @@ def _limit_field(label: str, value, on_change) -> rx.Component:
 
 def tab0_content():
     return rx.vstack(
-        _page_header("Scientific Query Planner", "Build research datasets and execute autonomous scientific agents."),
-        rx.text_area(
-            placeholder="e.g. Does metformin reduce breast cancer recurrence in diabetic patients?",
-            value=State.query,
-            on_change=State.set_query,
-            width="100%",
-            height="120px",
-            size="3",
-            radius="large",
-            style={"fontFamily": _FONT, "lineHeight": "1.6", "padding": "14px"},
-        ),
-        rx.text("📥 Max Papers to Fetch per Source", weight="bold", size="3", style={"fontFamily": _FONT_DISPLAY}, margin_top="4"),
-        rx.hstack(
-            _limit_field("PubMed", State.collector_limits["PubMed"], State.set_limit_pubmed),
-            _limit_field("PMC", State.collector_limits["PMC"], State.set_limit_pmc),
-            _limit_field("SemanticScholar", State.collector_limits["SemanticScholar"], State.set_limit_semanticscholar),
-            _limit_field("OpenAlex", State.collector_limits["OpenAlex"], State.set_limit_openalex),
-            _limit_field("ClinicalTrials", State.collector_limits["ClinicalTrials"], State.set_limit_clinicaltrials),
-            _limit_field("bioRxiv", State.collector_limits["bioRxiv"], State.set_limit_biorxiv),
-            _limit_field("ChEMBL", State.collector_limits["ChEMBL"], State.set_limit_chembl),
-            _limit_field("UniProt", State.collector_limits["UniProt"], State.set_limit_uniprot),
-            _limit_field("PubChem", State.collector_limits["PubChem"], State.set_limit_pubchem),
-            _limit_field("dbSNP", State.collector_limits["dbSNP"], State.set_limit_dbsnp),
-            wrap="wrap",
-            spacing="4",
-            width="100%",
-        ),
-        rx.text("🔬 Synthesis Components & Agent Targets", weight="bold", size="3", style={"fontFamily": _FONT_DISPLAY}, margin_top="4"),
-        rx.hstack(
-            rx.checkbox("Override LLM Routing (manually select agents)", checked=State.use_manual_agents, on_change=State.set_use_manual_agents),
-            rx.checkbox("Force Fresh Retrieval", checked=State.force_fresh, on_change=State.set_force_fresh),
-            spacing="5",
-            wrap="wrap",
-        ),
-        rx.cond(
-            State.use_manual_agents,
-            rx.box(
-                rx.hstack(
-                    rx.vstack(
-                        rx.checkbox("Claim Extractor", checked=State.sel_claim_extractor, on_change=State.set_sel_claim_extractor),
-                        rx.checkbox("Consensus", checked=State.sel_consensus, on_change=State.set_sel_consensus),
-                        spacing="2",
-                    ),
-                    rx.vstack(
-                        rx.checkbox("Evidence Ranker", checked=State.sel_evidence, on_change=State.set_sel_evidence),
-                        rx.checkbox("Lab Experiment", checked=State.sel_experiment, on_change=State.set_sel_experiment),
-                        spacing="2",
-                    ),
-                    rx.vstack(
-                        rx.checkbox("Contradiction", checked=State.sel_contradiction, on_change=State.set_sel_contradiction),
-                        rx.checkbox("ELN Assistant", checked=State.sel_eln, on_change=State.set_sel_eln),
-                        spacing="2",
-                    ),
-                    rx.vstack(
-                        rx.checkbox("Synthesis", checked=State.sel_synthesis, on_change=State.set_sel_synthesis), 
-                        rx.checkbox("Primer", checked=State.sel_primer, on_change=State.set_sel_primer),
-                        spacing="2"
-                    ),
-                    rx.vstack(
-                        rx.checkbox("Glossary", checked=State.sel_glossary, on_change=State.set_sel_glossary),
-                        rx.checkbox("Methodology", checked=State.sel_methodology, on_change=State.set_sel_methodology),
-                        spacing="2"
-                    ),
-                    rx.vstack(
-                        rx.checkbox("Clinical Readiness", checked=State.sel_clinical, on_change=State.set_sel_clinical),
-                        rx.checkbox("Bias Detector", checked=State.sel_bias, on_change=State.set_sel_bias),
-                        spacing="2"
-                    ),
-                    spacing="6",
-                    wrap="wrap",
-                ),
-                padding="4",
-                border_radius="14px",
-                width="100%",
-                style={"background": "rgba(99,102,241,0.08)", "border": "1px solid rgba(129,140,248,0.2)"},
-            ),
-        ),
-        rx.button("Run Planned Query", on_click=State.prepare_query_planner, loading=State.is_running | State.is_extracting_intent, **_btn_primary, margin_top="3"),
-        rx.dialog.root(
-            rx.dialog.content(
-                rx.dialog.title("🧬 Verify Research Intent & Routing", style={"fontFamily": _FONT_DISPLAY}),
-                rx.dialog.description(
-                    rx.vstack(
-                        rx.text("Extracted Search Intent:", size="2", weight="bold"),
-                        rx.text(State.extracted_intent, size="3", color="var(--indigo-11)", style={"background": "var(--indigo-3)", "padding": "0.5rem", "borderRadius": "8px", "fontFamily": _FONT_MONO, "width": "100%"}),
-                        rx.cond(
-                            ~State.use_manual_agents,
-                            rx.vstack(
-                                rx.text("Executor LLM Routing Plan:", size="2", weight="bold"),
-                                rx.text(State.extracted_routed_agents_str, size="3", color="var(--teal-11)", style={"background": "var(--teal-3)", "padding": "0.5rem", "borderRadius": "8px", "fontFamily": _FONT_MONO, "width": "100%"}),
-                                width="100%",
-                                spacing="1"
-                            )
-                        ),
-                        rx.text("If you need to adjust the search intent, provide refinement instructions below:", size="2", margin_top="2"),
-                        rx.input(
-                            placeholder="Refinement (e.g. 'focus only on clinical evidence', 'add type 2 diabetes')",
-                            value=State.refinement_instruction,
-                            on_change=State.set_refinement_instruction,
-                            **_input_style,
-                        ),
-                        rx.hstack(
-                            rx.dialog.close(rx.button("Cancel & Edit", on_click=State.close_confirm_dialog, **_btn_ghost)),
-                            rx.dialog.close(rx.button("Proceed & Execute", on_click=State.run_query_planner, **_btn_primary)),
-                            spacing="3",
-                            justify="end",
-                            width="100%",
-                            margin_top="3",
-                        ),
-                        spacing="3",
-                        width="100%",
-                    )
-                ),
-                style={
-                    "background": "linear-gradient(160deg, #111827 0%, #0b1020 100%)",
-                    "border": "1px solid rgba(129,140,248,0.25)",
-                    "borderRadius": "22px",
-                    "boxShadow": "0 24px 80px rgba(0,0,0,0.55)",
-                    "padding": "1.5rem",
-                    "fontFamily": _FONT,
-                },
-            ),
-            open=State.show_confirm_dialog,
-        ),
+        planner_workspace(),
         rx.cond(
             State.logs.length() > 0,
-            rx.card(
-                rx.vstack(
-                    rx.text("Terminal Output", weight="bold", style={"fontFamily": _FONT_DISPLAY}),
-                    rx.scroll_area(
-                        rx.foreach(
-                            State.logs,
-                            lambda log: rx.code(log, display="block", margin_bottom="2px", bg="transparent", style={"fontFamily": _FONT_MONO, "fontSize": "0.82rem"}),
-                        ),
-                        height="300px",
-                        width="100%",
-                        style={
-                            "background": "rgba(7,10,18,0.65)",
-                            "padding": "14px",
-                            "borderRadius": "12px",
-                            "border": "1px solid rgba(148,163,184,0.12)",
-                        },
-                    ),
-                    spacing="3",
-                    width="100%",
-                ),
-                **_card_style,
-                margin_top="5",
-            ),
+            terminal_logs_box(),
         ),
         rx.cond(
             State.pipeline_trace_visible,
@@ -2121,128 +2047,7 @@ def tab5_content():
     )
 
 
-def tab_eval_content():
-    return rx.vstack(
-        _page_header("RAG vs GraphRAG Performance", "Compare generation latency, citations, and conflict handling."),
-        rx.hstack(
-            rx.input(
-                placeholder="Enter evaluation query...",
-                on_change=State.set_eval_question,
-                size="3",
-                radius="large",
-                style={"minWidth": "320px", "flex": "1", "minHeight": "42px", "fontFamily": _FONT},
-            ),
-            rx.checkbox("Iterative ToG", checked=State.use_tog, on_change=State.set_use_tog, style={"fontFamily": _FONT}),
-            rx.button("Run Benchmark", on_click=State.run_benchmark, loading=State.eval_running, **_btn_primary),
-            align_items="center",
-            spacing="3",
-            width="100%",
-            wrap="wrap",
-        ),
-        rx.hstack(
-            rx.card(
-                rx.vstack(
-                    rx.heading("Vector RAG", size="5", style={"fontFamily": _FONT_DISPLAY}),
-                    rx.hstack(rx.icon(tag="clock", size=18, color="var(--accent-9)"), rx.text(f"Latency: {State.std_latency}", weight="bold", size="2")),
-                    rx.hstack(
-                        rx.icon(tag="file-text", size=18, color="var(--accent-9)"),
-                        rx.text(f"Citations: {State.std_citations} | Words: {State.std_words}", weight="bold", size="2"),
-                    ),
-                    rx.markdown(State.std_ans),
-                    rx.cond(
-                        State.std_sources_data.length() > 0,
-                        rx.vstack(
-                            rx.text("Sources", weight="bold", size="2", color="var(--gray-11)"),
-                            rx.foreach(
-                                State.std_sources_data,
-                                lambda s: rx.text(
-                                    f"• {s['title']}",
-                                    size="1",
-                                    color="var(--gray-10)",
-                                ),
-                            ),
-                            spacing="1",
-                            width="100%",
-                            margin_top="2",
-                        ),
-                    ),
-                    spacing="3",
-                    width="100%",
-                ),
-                width="100%",
-                padding="5",
-                radius="large",
-                style={
-                    **_card_style["style"],
-                    "borderLeft": "4px solid #94a3b8",
-                },
-            ),
-            rx.card(
-                rx.vstack(
-                    rx.heading("Graph RAG", size="5", style={"fontFamily": _FONT_DISPLAY}),
-                    rx.hstack(rx.icon(tag="clock", size=18, color="var(--accent-9)"), rx.text(f"Latency: {State.graph_latency}", weight="bold", size="2")),
-                    rx.hstack(
-                        rx.icon(tag="file-text", size=18, color="var(--accent-9)"),
-                        rx.text(f"Citations: {State.graph_citations} | Words: {State.graph_words}", weight="bold", size="2"),
-                    ),
-                    rx.markdown(State.graph_ans),
-                    rx.cond(
-                        State.graph_sources_data.length() > 0,
-                        rx.vstack(
-                            rx.text("Sources", weight="bold", size="2", color="var(--gray-11)"),
-                            rx.foreach(
-                                State.graph_sources_data,
-                                lambda s: rx.text(
-                                    f"• {s['title']}",
-                                    size="1",
-                                    color="var(--gray-10)",
-                                ),
-                            ),
-                            spacing="1",
-                            width="100%",
-                            margin_top="2",
-                        ),
-                    ),
-                    rx.cond(
-                        State.graph_relations_data.length() > 0,
-                        rx.vstack(
-                            rx.text("Graph relations", weight="bold", size="2", color="var(--gray-11)"),
-                            rx.foreach(
-                                State.graph_relations_data,
-                                lambda r: rx.text(
-                                    f"• {r['title']}",
-                                    size="1",
-                                    color="var(--gray-10)",
-                                ),
-                            ),
-                            spacing="1",
-                            width="100%",
-                            margin_top="2",
-                        ),
-                    ),
-                    spacing="3",
-                    width="100%",
-                ),
-                width="100%",
-                padding="5",
-                radius="large",
-                style={
-                    **_card_style["style"],
-                    "borderLeft": "4px solid #818cf8",
-                    "boxShadow": "0 8px 32px rgba(99,102,241,0.22)",
-                },
-            ),
-            spacing="4",
-            width="100%",
-            margin_top="5",
-            align_items="stretch",
-        ),
-        spacing="3",
-        padding="6",
-        width="100%",
-        max_width="1100px",
-        style={"fontFamily": _FONT},
-    )
+# tab_eval_content is imported from griffin_reflex.components.benchmark_ui
 
 
 def tab6_content():

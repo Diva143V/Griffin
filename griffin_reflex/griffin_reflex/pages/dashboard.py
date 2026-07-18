@@ -1,10 +1,8 @@
 import reflex as rx
-
+from griffin_reflex.styles.theme import COLORS, FONTS
 from griffin_reflex.components.sidebar import sidebar
 from griffin_reflex.components.dashboard import dashboard as dashboard_comp
 from griffin_reflex.components.ui import page_shell
-from griffin_reflex.data_layer import get_dashboard_metrics
-
 
 class DashboardState(rx.State):
     papers: str = "0"
@@ -33,21 +31,48 @@ class DashboardState(rx.State):
         self.claims = m["claims"]
         self.agreements = m["agreements"]
 
+def get_dashboard_metrics():
+    """Import wrapper helper to resolve dynamic imports cleanly"""
+    from griffin_reflex.data_layer import get_dashboard_metrics as dm
+    return dm()
 
 def dashboard():
+    """Redesigned Research Command Center page view"""
     return page_shell(
         sidebar(active="/dashboard"),
         rx.vstack(
+            # Top metrics controls row
             rx.hstack(
                 rx.spacer(),
                 rx.button(
-                    "↻ Refresh metrics",
+                    rx.hstack(
+                        rx.icon(tag="refresh-cw", size=16),
+                        rx.text("Refresh Metrics"),
+                        spacing="2",
+                    ),
                     on_click=DashboardState.load_metrics,
-                    variant="soft",
-                    color_scheme="indigo",
+                    size="3",
+                    style={
+                        "background": f"linear-gradient(135deg, {COLORS['primary']}, {COLORS['secondary']})",
+                        "boxShadow": f"0 4px 15px {COLORS['primary_glow']}",
+                        "border": "none",
+                        "color": "white",
+                        "borderRadius": "12px",
+                        "padding": "0 22px",
+                        "minHeight": "40px",
+                        "cursor": "pointer",
+                        "transition": "all 0.3s ease",
+                        "_hover": {
+                            "transform": "translateY(-2px)",
+                            "boxShadow": f"0 8px 25px {COLORS['primary_glow']}",
+                        }
+                    }
                 ),
                 width="100%",
+                padding_bottom="4",
             ),
+            
+            # The metrics layout block
             dashboard_comp(
                 papers=DashboardState.papers,
                 evidence_score=DashboardState.evidence_score,

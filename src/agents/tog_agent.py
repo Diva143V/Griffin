@@ -36,8 +36,12 @@ def trigger_self_healing_retrieval(term_a: str, term_b: str, model: str = "llama
     for cmd in steps:
         try:
             logger.info("Executing self-healing step: %s", " ".join(cmd))
-            subprocess.run(cmd, capture_output=True, text=True, check=True)
+            # Set timeout to 120 seconds to prevent hanging subprocesses
+            subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=120)
             logger.info("Step completed successfully.")
+        except subprocess.TimeoutExpired:
+            logger.error("Self-healing step timed out: %s", " ".join(cmd))
+            return False
         except subprocess.CalledProcessError as e:
             logger.error("Self-healing step failed: %s. Output: %s. Stderr: %s", " ".join(cmd), e.stdout, e.stderr)
             return False
@@ -45,7 +49,7 @@ def trigger_self_healing_retrieval(term_a: str, term_b: str, model: str = "llama
     return True
 
 
-def extract_starting_entities(query: str, client: Neo4jClient) -> List[str]:
+def extract_starting_entities(query: str, client: Neo4jClient, model: str = "llama3.1:8b") -> List[str]:
     """Identify potential starting entities (drugs, targets, diseases) in the query using LLM + regex fallback."""
     entities = []
     prompt = f"""
@@ -57,7 +61,7 @@ def extract_starting_entities(query: str, client: Neo4jClient) -> List[str]:
     """
     try:
         response = llm_chat(
-            model="llama3.1:8b",
+            model=model,
             messages=[{"role": "user", "content": prompt}],
             task="extract"
         )
@@ -118,6 +122,15 @@ def extract_starting_entities(query: str, client: Neo4jClient) -> List[str]:
                 # If completely missing from database, keep it so it triggers self-healing!
                 verified_entities.append(ent_clean)
     
+    # Dynamic fallback: If no entities were found or matched, use query keywords instead of hardcoded 'Metformin'
+    if not verified_entities:
+        query_words = [
+            w.strip().capitalize() for w in re.split(r'\W+', query)
+            if len(w.strip()) > 3 and w.lower() not in common_words
+        ]
+        if query_words:
+            verified_entities.extend(query_words[:3])
+
     return list(set(verified_entities)) if verified_entities else ["Metformin"]
 
 
@@ -136,7 +149,8 @@ def explore_neighbors(active_node: str, client: Neo4jClient) -> List[Dict[str, A
            r.weight as weight,
            labels(m) as m_labels,
            coalesce(m.name, m.title, m.id) as m_identifier
-    LIMIT 25
+    ORDER BY coalesce(r.weight, 0) DESC, coalesce(r.confidence, 0) DESC
+    LIMIT 100
     """
     try:
         return client.query_graph(query, {"val": active_node})
@@ -162,10 +176,17 @@ class ThinkOnGraphAgent:
         if not self.client.verify_connection():
             return "Neo4j is not connected. Skipping Think-on-Graph reasoning.", []
 
-        # 1. Extract starting nodes
-        raw_entities = extract_starting_entities(query, self.client)
+        # 1. Extract starting nodes using the configured model
+        raw_entities = extract_starting_entities(query, self.client, model=self.model)
+        
+        # Determine fallback default if completely empty
         if not raw_entities:
-            raw_entities = ["Metformin"]
+            # Try to grab query keywords as dynamic default fallback
+            query_words = [
+                w.strip().capitalize() for w in re.split(r'\W+', query)
+                if len(w.strip()) > 3
+            ]
+            raw_entities = query_words[:3] if query_words else ["Metformin"]
 
         traversal_history: List[str] = []
         traversal_history.append(f"### Think-on-Graph (ToG) Traversal Initialization\n- **Extracted Query Entities**: {', '.join([f'`{n}`' for n in raw_entities])}")
@@ -193,7 +214,9 @@ class ThinkOnGraphAgent:
                     traversal_history.append(f"  * Dynamic ingestion returned no results for `{missing}`. Traversal will proceed with existing nodes.")
             
             # Re-extract starting nodes after healing
-            active_nodes = extract_starting_entities(query, self.client)
+            active_nodes = extract_starting_entities(query, self.client, model=self.model)
+            if not active_nodes:
+                active_nodes = raw_entities
         else:
             active_nodes = raw_entities
 

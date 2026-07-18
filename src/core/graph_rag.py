@@ -12,6 +12,11 @@ import numpy as np
 import pandas as pd
 from sentence_transformers import SentenceTransformer
 from ..shared.llm import chat as llm_chat
+from ..shared.config import (
+    RANKED_PAPERS_PATH,
+    EMBEDDINGS_PATH,
+    CONTRADICTIONS_PATH
+)
 
 logger = logging.getLogger(__name__)
 
@@ -34,9 +39,9 @@ def parse_embedding(value: Any) -> np.ndarray:
 
 
 def load_data(
-    ranked_path: str = "dataset/ranked_papers.csv",
-    embeddings_path: str = "dataset/clean_papers_with_embeddings.csv",
-    contradictions_path: str = "dataset/contradictions.json"
+    ranked_path: str = RANKED_PAPERS_PATH,
+    embeddings_path: str = EMBEDDINGS_PATH,
+    contradictions_path: str = CONTRADICTIONS_PATH
 ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     """Load ranked papers and map embeddings, and load the contradictions graph."""
     if not os.path.exists(ranked_path):

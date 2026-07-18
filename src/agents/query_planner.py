@@ -76,7 +76,22 @@ def get_valid_model(requested_model: str, fallback_priority: List[str] = None) -
             notes.append(f"Model '{requested_model}' not found exactly. Using installed sibling '{m}'.")
             return m, notes
 
-    # 3. Fallback priority match
+    # 3. Dynamic Family Match (e.g., matching any 'llama', 'qwen', or 'gemma' model if family matches)
+    families = ["llama", "qwen", "gemma", "phi", "mistral"]
+    matched_family = None
+    for fam in families:
+        if fam in req_clean:
+            matched_family = fam
+            break
+
+    if matched_family:
+        for m in installed_models:
+            m_clean = clean_name(m)
+            if matched_family in m_clean:
+                notes.append(f"Model '{requested_model}' not found. Falling back to related family model '{m}'.")
+                return m, notes
+
+    # 4. Fallback priority match
     if fallback_priority:
         for fb in fallback_priority:
             for m in installed_models:
@@ -84,7 +99,7 @@ def get_valid_model(requested_model: str, fallback_priority: List[str] = None) -
                     notes.append(f"Model '{requested_model}' not found. Falling back to priority model '{m}'.")
                     return m, notes
 
-    # 4. Grab first available model as absolute fallback
+    # 5. Grab first available model as absolute fallback
     first_avail = installed_models[0]
     notes.append(f"Model '{requested_model}' not found. Falling back to first available model '{first_avail}'.")
     return first_avail, notes
