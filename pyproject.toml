@@ -13,7 +13,6 @@ numpy = "1.24.3"
 lxml = "4.9.3"
 biopython = "1.84"
 ollama = "0.3.3"
-streamlit = "1.37.1"
 sentence-transformers = "2.7.0"
 scikit-learn = "1.5.1"
 chromadb = "0.5.5"
@@ -23,6 +22,7 @@ networkx = ">=3.0"
 google-genai = ">=0.3.0"
 duckduckgo-search = "^6.2.13"
 neo4j = "^5.14.0"
+pydantic = ">=2.0"
 
 
 [build-system]

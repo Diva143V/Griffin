@@ -1,9 +1,19 @@
-"""Advanced evidence ranking pipeline for biomedical papers.
+"""Heuristic evidence ranking pipeline for biomedical papers.
 
-This script processes cleaned research papers and ranks them according to a
-rigorous hierarchy of clinical evidence (adapted from Oxford Centre for Evidence-Based Medicine).
-It integrates regular expression patterns, trial phase extraction, study design classification,
-sample size estimation, and produces detailed scoring and reports.
+This script processes cleaned research papers and assigns a *heuristic* study-design
+classification and evidence score based on keyword / regex pattern matching in
+titles and abstracts.  The hierarchy is *loosely inspired by* the Oxford Centre
+for Evidence-Based Medicine (CEBM) Levels of Evidence, but this implementation
+does **not** constitute a validated CEBM assessment.  In particular:
+
+  - Classification depends solely on title/abstract keyword patterns.
+  - It stops at the first matching category (ordered by dict insertion).
+  - Sample-size extraction takes the first matching number, which may be
+    an arm size, a cited figure, or otherwise unrelated to the actual study.
+  - No retraction status, risk-of-bias, population, or outcome checks exist.
+
+Treat scores as an *exploratory relevance heuristic*, not as a defensible
+clinical evidence quality assessment.
 """
 
 from __future__ import annotations
@@ -24,12 +34,15 @@ logger = logging.getLogger("evidence_ranker")
 # ---------------------------------------------------------------------------
 # Constants & Evidence Hierarchy Definitions
 # ---------------------------------------------------------------------------
-# Oxford Centre for Evidence-Based Medicine (CEBM) Levels:
-# Level 1: Systematic reviews, Meta-analyses, Randomized Controlled Trials (RCTs)
-# Level 2: Cohort studies, Prospective studies, low-quality RCTs
-# Level 3: Case-control studies, Retrospective cohort studies
-# Level 4: Case series, Case reports, Cross-sectional studies
-# Level 5: In vitro (cell lines) / In vivo (animal models) / Expert opinion / Review papers
+# Heuristic study-design categories loosely inspired by the Oxford CEBM
+# Levels of Evidence.  These are keyword-based proxies, NOT validated CEBM
+# assessments.  See module docstring for caveats.
+#
+# Proxy Level 1: Systematic reviews, Meta-analyses, RCTs (keyword match)
+# Proxy Level 2: Cohort studies, Prospective studies, early-phase trials
+# Proxy Level 3: Case-control studies, Retrospective cohort studies
+# Proxy Level 4: Case series, Case reports, Cross-sectional studies
+# Proxy Level 5: Preclinical / Reviews / Expert opinion
 
 STUDY_TYPES = {
     "LEVEL_1_META": {
@@ -223,8 +236,9 @@ def classify_and_score(title: str, abstract: str) -> Tuple[float, str, int | Non
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    input_file = "dataset/clean_papers.csv"
-    output_file = "dataset/ranked_papers.csv"
+    run_dir = os.environ.get("GRIFFIN_RUN_DIR", "dataset")
+    input_file = os.path.join(run_dir, "clean_papers.csv")
+    output_file = os.path.join(run_dir, "ranked_papers.csv")
 
     if not os.path.exists(input_file):
         logger.error("Input file not found: %s. Run clean_dataset.py first.", input_file)

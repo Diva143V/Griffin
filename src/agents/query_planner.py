@@ -2,7 +2,7 @@
 
 The actual planning logic now lives in planner_agent.py and the retrieval
 hooks live in retriever_agent.py. This file keeps the original import surface
-for the Streamlit app and any scripts that still import query_planner.
+for the web application and any scripts that still import query_planner.
 """
 from __future__ import annotations
 from typing import Callable
@@ -12,7 +12,10 @@ import sys
 import json
 import subprocess
 import time
+import logging
 from typing import Any, Dict, Optional, List, Tuple
+
+logger = logging.getLogger(__name__)
 
 import pandas as pd
 import numpy as np
@@ -234,21 +237,23 @@ def run_pipeline_ingestion(query: str, email: str | None = None, api_key: str = 
         
     os.environ["ENTREZ_EMAIL"] = email
 
+    run_dir = os.environ.get("GRIFFIN_RUN_DIR", "dataset")
+
     # Clear old collection files to prevent merging stale data from previous topics
     for f_name in ["pubmed.csv", "pmc.csv", "openalex.csv", "semantic_scholar.csv", "clinicaltrials.csv", "biorxiv.csv", "chembl.csv", "uniprot.csv", "pubchem.csv", "dbsnp.csv", "clean_papers.csv", "clean_papers_with_embeddings.csv", "ranked_papers.csv"]:
-        path = os.path.join("dataset", f_name)
+        path = os.path.join(run_dir, f_name)
         if os.path.exists(path):
             try:
                 os.remove(path)
             except Exception:
                 pass
 
-    os.makedirs("dataset", exist_ok=True)
-    with open("dataset/terminal.log", "w", encoding="utf-8") as f:
+    os.makedirs(run_dir, exist_ok=True)
+    with open(os.path.join(run_dir, "terminal.log"), "w", encoding="utf-8") as f:
         f.write(f"--- Starting Dynamic Ingestion for query: '{search_query}' ---\n")
 
     # 1. build_dataset
-    with open("dataset/terminal.log", "a", encoding="utf-8") as log_file:
+    with open(os.path.join(run_dir, "terminal.log"), "a", encoding="utf-8") as log_file:
         try:
             logs.append("Starting data collection...")
             import json
@@ -273,8 +278,8 @@ def run_pipeline_ingestion(query: str, email: str | None = None, api_key: str = 
         try:
             subprocess.run([
                 sys.executable, "generate_embeddings.py",
-                "--input", "dataset/clean_papers.csv",
-                "--output", "dataset/clean_papers_with_embeddings.csv"
+                "--input", os.path.join(run_dir, "clean_papers.csv"),
+                "--output", os.path.join(run_dir, "clean_papers_with_embeddings.csv")
             ], check=True, stdout=log_file, stderr=subprocess.STDOUT)
             logs.append("Embedding generation completed successfully.")
         except Exception as e:
@@ -440,11 +445,31 @@ def execute_query_plan(
     # 1. Check database for existing relevant papers using the clean scientific search query
     if status_callback:
         status_callback("Checking database cache for relevant papers...")
-    if force_fresh:
+    run_dir = os.environ.get("GRIFFIN_RUN_DIR", "dataset")
+
+    # Verify if query dataset is already present on disk (cache mechanism)
+    is_present = False
+    check_msg = ""
+    fallback_logs = []
+    
+    if not force_fresh:
+        # Check if the execution matches the cached last run goal to short-circuit
+        goal_path = os.path.join(run_dir, "last_research_goal.txt")
+        if os.path.exists(goal_path):
+            try:
+                with open(goal_path, "r", encoding="utf-8") as gf:
+                    last_goal = gf.read().strip()
+                if last_goal.lower() == plan.query.lower():
+                    # Check if key artifact files exist
+                    if os.path.exists(os.path.join(run_dir, "ranked_papers.csv")) and os.path.exists(os.path.join(run_dir, "clean_papers_with_embeddings.csv")):
+                        is_present = True
+                        check_msg = "Scientific research database cache matched for topic. Skipping collection."
+            except Exception as ce:
+                fallback_logs.append(f"Cache verification skipped due to: {ce}")
+    else:
         is_present = False
         check_msg = "Force fresh retrieval requested. Ignoring database cache."
-    else:
-        is_present, check_msg = check_and_trigger_retrieval(search_query, encoder_model, plan.top_k)
+        
     print(check_msg)
     
     notes = [check_msg]
@@ -458,11 +483,11 @@ def execute_query_plan(
             ingest_logs = run_pipeline_ingestion(search_query, email=email, api_key=api_key, model_name=resolved_routing["planner"], top_k=plan.top_k, collector_limits=collector_limits)
             notes.extend(ingest_logs)
             # Reload datasets
-            if os.path.exists("dataset/ranked_papers.csv"):
-                ranked_df = pd.read_csv("dataset/ranked_papers.csv")
+            if os.path.exists(os.path.join(run_dir, "ranked_papers.csv")):
+                ranked_df = pd.read_csv(os.path.join(run_dir, "ranked_papers.csv"))
                 # Merge embeddings
-                if os.path.exists("dataset/clean_papers_with_embeddings.csv"):
-                    emb_df = pd.read_csv("dataset/clean_papers_with_embeddings.csv")
+                if os.path.exists(os.path.join(run_dir, "clean_papers_with_embeddings.csv")):
+                    emb_df = pd.read_csv(os.path.join(run_dir, "clean_papers_with_embeddings.csv"))
                     ranked_df["title_clean"] = ranked_df["title"].fillna("").astype(str).str.strip().str.lower()
                     emb_df["title_clean"] = emb_df["title"].fillna("").astype(str).str.strip().str.lower()
                     emb_df_subset = emb_df[["title_clean", "embedding"]].drop_duplicates(subset=["title_clean"])
@@ -487,9 +512,9 @@ def execute_query_plan(
     else:
         # Check if ranked_df is empty or None, load it or rebuild from Chroma DB
         if ranked_df is None or ranked_df.empty:
-            if os.path.exists("dataset/ranked_papers.csv"):
+            if os.path.exists(os.path.join(run_dir, "ranked_papers.csv")):
                 try:
-                    ranked_df = pd.read_csv("dataset/ranked_papers.csv")
+                    ranked_df = pd.read_csv(os.path.join(run_dir, "ranked_papers.csv"))
                     if "embedding" in ranked_df.columns:
                         ranked_df["embedding"] = ranked_df["embedding"].apply(parse_emb)
                     notes.append("Loaded existing ranked papers from disk.")
@@ -531,13 +556,13 @@ def execute_query_plan(
                                     rows.append(row)
                                     
                                 df = pd.DataFrame(rows)
-                                os.makedirs("dataset", exist_ok=True)
+                                os.makedirs(run_dir, exist_ok=True)
                                 
                                 # Save standard version to disk
                                 df_disk = df.copy()
                                 df_disk["embedding"] = df_disk["embedding"].apply(lambda x: json.dumps(x.tolist()))
-                                df_disk.to_csv("dataset/clean_papers.csv", index=False)
-                                df_disk.to_csv("dataset/ranked_papers.csv", index=False)
+                                df_disk.to_csv(os.path.join(run_dir, "clean_papers.csv"), index=False)
+                                df_disk.to_csv(os.path.join(run_dir, "ranked_papers.csv"), index=False)
                                 
                                 ranked_df = df
                                 notes.append("Successfully restored papers and embedding vectors from Neo4j cache to disk.")
@@ -764,8 +789,8 @@ def execute_query_plan(
         routing_stats["consensus_analyst"]["duration_sec"] = round(cons_out.get("execution_time_sec", 0.0), 2)
         result["consensus"] = cons_out
         try:
-            os.makedirs("dataset", exist_ok=True)
-            with open("dataset/consensus_report.md", "w", encoding="utf-8") as f:
+            os.makedirs(run_dir, exist_ok=True)
+            with open(os.path.join(run_dir, "consensus_report.md"), "w", encoding="utf-8") as f:
                 f.write(cons_out["consensus_report"])
         except Exception:
             pass
@@ -775,7 +800,7 @@ def execute_query_plan(
             if status_callback: status_callback("Analyzing Clinical Translation Readiness...")
             clin_out = analyze_clinical_translation(cons_out["consensus_report"], model_name=resolved_routing.get("clinical", "llama3.1:8b"), options=llm_options)
             try:
-                with open("dataset/clinical_report.md", "w", encoding="utf-8") as f:
+                with open(os.path.join(run_dir, "clinical_report.md"), "w", encoding="utf-8") as f:
                     f.write(clin_out["clinical_report"])
             except Exception: pass
             if clin_out:
@@ -790,7 +815,7 @@ def execute_query_plan(
     ]:
         if out_dict and key in out_dict:
             try:
-                with open(f"dataset/{filename}", "w", encoding="utf-8") as f:
+                with open(os.path.join(run_dir, filename), "w", encoding="utf-8") as f:
                     f.write(out_dict[key])
             except Exception: pass
 
@@ -799,8 +824,8 @@ def execute_query_plan(
         result["experiment_protocol"] = exp_out["protocol_draft"]
         routing_stats["experiment_planner"]["duration_sec"] = round(exp_out.get("execution_time_sec", 0.0), 2)
         try:
-            os.makedirs("dataset", exist_ok=True)
-            with open("dataset/protocol_draft.txt", "w", encoding="utf-8") as f:
+            os.makedirs(run_dir, exist_ok=True)
+            with open(os.path.join(run_dir, "protocol_draft.txt"), "w", encoding="utf-8") as f:
                 f.write(exp_out["protocol_draft"])
         except Exception:
             pass
@@ -812,16 +837,16 @@ def execute_query_plan(
                                        model_name=resolved_routing["experiment_planner"], options=llm_options)
             result["eln_entry"] = eln_res["eln_entry"]
             try:
-                os.makedirs("dataset", exist_ok=True)
-                with open("dataset/eln_entry.txt", "w", encoding="utf-8") as f:
+                os.makedirs(run_dir, exist_ok=True)
+                with open(os.path.join(run_dir, "eln_entry.txt"), "w", encoding="utf-8") as f:
                     f.write(eln_res["eln_entry"])
             except Exception:
                 pass
 
     if "synthesis_answer" in result and result["synthesis_answer"]:
         try:
-            os.makedirs("dataset", exist_ok=True)
-            with open("dataset/final_synthesis.md", "w", encoding="utf-8") as f:
+            os.makedirs(run_dir, exist_ok=True)
+            with open(os.path.join(run_dir, "final_synthesis.md"), "w", encoding="utf-8") as f:
                 f.write(result["synthesis_answer"])
         except Exception:
             pass

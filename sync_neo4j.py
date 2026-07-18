@@ -565,22 +565,25 @@ def sync_database(
 
 def main():
     parser = argparse.ArgumentParser(description="Synchronize Griffin dataset to Neo4j graph database")
-    parser.add_argument("--ranked-papers", default="dataset/ranked_papers.csv")
-    parser.add_argument("--claims", default="dataset/claims.csv")
-    parser.add_argument("--contradictions", default="dataset/contradictions.json")
+    run_dir = os.environ.get("GRIFFIN_RUN_DIR", "dataset")
+    parser.add_argument("--ranked-papers", default=os.path.join(run_dir, "ranked_papers.csv"))
+    parser.add_argument("--claims", default=os.path.join(run_dir, "claims.csv"))
+    parser.add_argument("--contradictions", default=os.path.join(run_dir, "contradictions.json"))
     parser.add_argument("--model", default="llama3.1:8b", help="Ollama model for entity extraction")
     parser.add_argument("--skip-entities", action="store_true", help="Skip LLM-based entity-relationship extraction")
     parser.add_argument("--clear", action="store_true", help="Clear the database before syncing")
+    parser.add_argument("--no-clear", action="store_true", help="Do not clear the database (incremental sync)")
     parser.add_argument("--skip-reports", action="store_true", help="Skip LLM-generated reports synchronization")
     
     args = parser.parse_args()
+    clear_db = args.clear and not args.no_clear
     sync_database(
         ranked_path=args.ranked_papers,
         claims_path=args.claims,
         contradictions_path=args.contradictions,
         model=args.model,
         skip_entities=args.skip_entities,
-        clear_db=args.clear,
+        clear_db=clear_db,
         skip_reports=args.skip_reports,
     )
 

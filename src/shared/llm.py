@@ -2,7 +2,7 @@
 
 Every agent imports `chat` from here instead of calling `ollama.chat` directly.
 This guarantees models stay warm (keep_alive) and that each task uses sensible
-sampling defaults, while still honouring the Streamlit sidebar overrides.
+sampling defaults, while still honouring custom sidebar overrides.
 """
 from __future__ import annotations
 from typing import Any, Dict, List, Optional

@@ -17,7 +17,9 @@ class DashboardState(rx.State):
 
     @rx.event
     def load_metrics(self):
-        m = get_dashboard_metrics()
+        from griffin_reflex.griffin_reflex import State
+        parent = self.get_state(State)
+        m = get_dashboard_metrics(parent.run_dir)
         self.papers = m["papers"]
         self.evidence_score = m["evidence_score"]
         self.contradictions = m["contradictions"]
@@ -31,10 +33,10 @@ class DashboardState(rx.State):
         self.claims = m["claims"]
         self.agreements = m["agreements"]
 
-def get_dashboard_metrics():
+def get_dashboard_metrics(dataset_dir: str = None):
     """Import wrapper helper to resolve dynamic imports cleanly"""
     from griffin_reflex.data_layer import get_dashboard_metrics as dm
-    return dm()
+    return dm(dataset_dir)
 
 def dashboard():
     """Redesigned Research Command Center page view"""

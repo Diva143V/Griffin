@@ -1,8 +1,32 @@
+import os
 import requests
+from urllib.parse import urlparse
 from typing import List, Dict, Any, Optional
+
+def is_safe_eln_url(url: str) -> bool:
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            return False
+        hostname = parsed.hostname
+        if not hostname:
+            return False
+        # Allow localhost and 127.0.0.1
+        if hostname.lower() in ("localhost", "127.0.0.1"):
+            return True
+        # Allow specific domains from env
+        allowed_domains = os.environ.get("ALLOWED_ELN_DOMAINS", "").split(",")
+        allowed_domains = [d.strip().lower() for d in allowed_domains if d.strip()]
+        if hostname.lower() in allowed_domains:
+            return True
+        return False
+    except Exception:
+        return False
 
 class IndigoELNClient:
     def __init__(self, base_url: str = "http://localhost:9000"):
+        if not is_safe_eln_url(base_url):
+            raise ValueError(f"Insecure or unauthorized ELN URL: {base_url}. Connection refused.")
         self.base_url = base_url
         self.session = requests.Session()
         self.authenticated = False

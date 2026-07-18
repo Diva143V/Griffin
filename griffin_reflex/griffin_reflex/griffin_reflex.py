@@ -35,11 +35,13 @@ def _peer_review_sync(api_key, report, focus_area, gemini_model):
     from src.agents.peer_review_agent import run_peer_review
     return run_peer_review(api_key, report, focus_area, gemini_model)
 
-def _overseer_sync(api_key, report, custom_inst, gemini_model):
+def _overseer_sync(api_key, report, custom_inst, gemini_model, dataset_dir=None):
     from src.agents.report_agent import generate_overseer_report
+    if not dataset_dir:
+        dataset_dir = DATASET_DIR
     extra=""
-    rp=os.path.join(DATASET_DIR,"clean_papers_with_embeddings.csv")
-    cp=os.path.join(DATASET_DIR,"contradictions.json")
+    rp=os.path.join(dataset_dir,"clean_papers_with_embeddings.csv")
+    cp=os.path.join(dataset_dir,"contradictions.json")
     if os.path.exists(rp):
         try: extra+=pd.read_csv(rp).head(10).to_string()
         except Exception: pass
@@ -51,22 +53,27 @@ def _overseer_sync(api_key, report, custom_inst, gemini_model):
             pass
     return generate_overseer_report(api_key, report, extra, custom_inst, gemini_model)
 
+
 def _qa_sync(api_key, report, gemini_model):
     from src.agents.validation_agent import run_qa_audit
     return run_qa_audit(api_key, report, gemini_model)
+
 
 def _refine_sync(api_key, report, instr, gemini_model):
     from src.agents.refinement_agent import refine_report_section
     return refine_report_section(api_key, report, instr, gemini_model)
 
-def _benchmark_sync(question, model_choice, use_tog=False):
+
+def _benchmark_sync(question, model_choice, use_tog=False, dataset_dir=None):
     import time
     from src.core import graph_rag
     from sentence_transformers import SentenceTransformer
+    if not dataset_dir:
+        dataset_dir = DATASET_DIR
     ranked_df, contradictions = graph_rag.load_data(
-        ranked_path=os.path.join(DATASET_DIR, "ranked_papers.csv"),
-        embeddings_path=os.path.join(DATASET_DIR, "clean_papers_with_embeddings.csv"),
-        contradictions_path=os.path.join(DATASET_DIR, "contradictions.json")
+        ranked_path=os.path.join(dataset_dir, "ranked_papers.csv"),
+        embeddings_path=os.path.join(dataset_dir, "clean_papers_with_embeddings.csv"),
+        contradictions_path=os.path.join(dataset_dir, "contradictions.json")
     )
     enc = SentenceTransformer('BAAI/bge-small-en-v1.5')
     
@@ -219,10 +226,12 @@ def _graph_sync():
     return fig
 
 
-def _run_synthesis_sync(query, model_name, options):
+def _run_synthesis_sync(query, model_name, options, dataset_dir=None):
     from src.agents.consensus_agent import analyze_consensus
-    ranked_path=os.path.join(DATASET_DIR,"ranked_papers.csv")
-    con_path=os.path.join(DATASET_DIR,"contradictions.json")
+    if not dataset_dir:
+        dataset_dir = DATASET_DIR
+    ranked_path=os.path.join(dataset_dir,"ranked_papers.csv")
+    con_path=os.path.join(dataset_dir,"contradictions.json")
     
     temp_sources = []
     if os.path.exists(ranked_path):
@@ -239,43 +248,48 @@ def _run_synthesis_sync(query, model_name, options):
         except Exception: pass
         
     res = analyze_consensus(query, temp_sources, temp_relations, model_name, options)
-    os.makedirs(DATASET_DIR, exist_ok=True)
-    with open(os.path.join(DATASET_DIR, "consensus_report.md"), "w", encoding="utf-8") as f:
+    os.makedirs(dataset_dir, exist_ok=True)
+    with open(os.path.join(dataset_dir, "consensus_report.md"), "w", encoding="utf-8") as f:
         f.write(res.get("consensus_report", ""))
     return res
 
-def _run_contradiction_pipeline_sync(extractor, detector):
+
+def _run_contradiction_pipeline_sync(extractor, detector, dataset_dir=None):
     from src.core.claim_extractor import extract_claims
     from src.core.contradiction_detector import run_detector
+    if not dataset_dir:
+        dataset_dir = DATASET_DIR
     extract_claims(
-        input_path=os.path.join(DATASET_DIR, "clean_papers.csv"),
-        output_path=os.path.join(DATASET_DIR, "claims.csv"),
+        input_path=os.path.join(dataset_dir, "clean_papers.csv"),
+        output_path=os.path.join(dataset_dir, "claims.csv"),
         model=extractor,
         limit=50,
         resume=False
     )
     run_detector(
-        input_path=os.path.join(DATASET_DIR, "claims.csv"),
-        output_text=os.path.join(DATASET_DIR, "contradictions.txt"),
-        output_csv=os.path.join(DATASET_DIR, "contradictions.csv"),
-        output_json=os.path.join(DATASET_DIR, "contradictions.json"),
-        output_report=os.path.join(DATASET_DIR, "contradiction_report.md"),
+        input_path=os.path.join(dataset_dir, "claims.csv"),
+        output_text=os.path.join(dataset_dir, "contradictions.txt"),
+        output_csv=os.path.join(dataset_dir, "contradictions.csv"),
+        output_json=os.path.join(dataset_dir, "contradictions.json"),
+        output_report=os.path.join(dataset_dir, "contradiction_report.md"),
         model=detector,
         embedding_model="BAAI/bge-small-en-v1.5",
-        evidence_file=os.path.join(DATASET_DIR, "ranked_papers.csv"),
+        evidence_file=os.path.join(dataset_dir, "ranked_papers.csv"),
         max_pairs=20,
         similarity_threshold=0.45,
         skip_embeddings=False
     )
     return True
 
-def _rag_chat_sync(user_input):
+def _rag_chat_sync(user_input, dataset_dir=None):
     from sentence_transformers import SentenceTransformer
+    if not dataset_dir:
+        dataset_dir = DATASET_DIR
     encoder_model = SentenceTransformer("BAAI/bge-small-en-v1.5")
     query_emb = encoder_model.encode([user_input], normalize_embeddings=True)[0]
     
     retrieved_sources = []
-    emb_path = os.path.join(DATASET_DIR, "clean_papers_with_embeddings.csv")
+    emb_path = os.path.join(dataset_dir, "clean_papers_with_embeddings.csv")
     if os.path.exists(emb_path):
         ranked_df = pd.read_csv(emb_path)
         ranked_df["embedding"] = ranked_df["embedding"].apply(lambda x: parse_embedding(x) if pd.notna(x) else np.array([0.0]*384, dtype=np.float32))
@@ -327,6 +341,9 @@ class ChatMessage:
 
 class State(rx.State):
     """The app state."""
+    selected_run: str = ""
+    available_runs: list[str] = []
+    
     # Sidebar Settings
     query: str = ""
     api_key: str = ""
@@ -482,12 +499,13 @@ class State(rx.State):
 
     @rx.event
     async def on_load(self):
+        self.update_available_runs()
         loop=asyncio.get_running_loop()
         self.installed_models = await loop.run_in_executor(None, get_ollama_model_names)
         self.gemini_model_list = await loop.run_in_executor(None, get_gemini_model_names, self.api_key)
         # Prefill planner query from onboarding / last run goal when empty
         if not (self.query or "").strip():
-            goal_path = os.path.join(DATASET_DIR, "last_research_goal.txt")
+            goal_path = os.path.join(self.run_dir, "last_research_goal.txt")
             if os.path.exists(goal_path):
                 try:
                     with open(goal_path, "r", encoding="utf-8") as gf:
@@ -508,6 +526,29 @@ class State(rx.State):
         """Manually trigger a reload of local Ollama models in real-time."""
         loop = asyncio.get_running_loop()
         self.installed_models = await loop.run_in_executor(None, get_ollama_model_names)
+
+    @rx.event
+    def set_selected_run_action(self, val: str):
+        if val == "Main Workspace" or not val:
+            self.selected_run = ""
+        else:
+            self.selected_run = val
+        self.load_contradictions()
+        self.load_claims()
+        self.load_ranked_evidence()
+        self.load_execution_trace()
+
+    def update_available_runs(self):
+        root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+        runs_dir = os.path.join(root_dir, "dataset", "runs")
+        if not os.path.exists(runs_dir):
+            self.available_runs = []
+            return
+        try:
+            dirs = [d for d in os.listdir(runs_dir) if os.path.isdir(os.path.join(runs_dir, d))]
+            self.available_runs = sorted(dirs, reverse=True)
+        except Exception:
+            self.available_runs = []
 
     @rx.event
     async def set_api_key(self, val: str): 
@@ -775,6 +816,13 @@ class State(rx.State):
                 "consensus_analyst": "koesn/llama3-openbiollm-8b:latest", "synthesis": "llama3.1:8b", "experiment_planner": "llama3.1:8b"
             }
 
+    @rx.var
+    def run_dir(self) -> str:
+        root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+        if self.selected_run:
+            return os.path.join(root_dir, "dataset", "runs", self.selected_run)
+        return os.path.join(root_dir, "dataset")
+
     async def run_rag_chat(self):
         if not self.rag_chat_input.strip(): return
         msg = ChatMessage(role="user", content=self.rag_chat_input, sources=[])
@@ -785,7 +833,7 @@ class State(rx.State):
         yield
         
         loop = asyncio.get_running_loop()
-        retrieved_sources = await loop.run_in_executor(None, _rag_chat_sync, prompt)
+        retrieved_sources = await loop.run_in_executor(None, _rag_chat_sync, prompt, self.run_dir)
         
         context_list = []
         for src in retrieved_sources:
@@ -856,10 +904,16 @@ class State(rx.State):
         self.matched_claims = []
         self.verification_trace = []
         
-        # Wipe out old downstream outputs in dataset folder to prevent stale data
+        import datetime
+        run_id = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.selected_run = run_id
+        self.update_available_runs()
+        run_dir_path = self.run_dir
+
+        # Wipe out old downstream outputs in run folder to prevent stale data
         old_files = ["contradictions.json", "contradictions.csv", "contradiction_report.md", "claims.csv", "synthesis.md", "consensus.md", "experiment_protocol.md", "eln_entry.md", "execution_trace.json", "ranked_papers.csv", "primer_report.md", "glossary_report.md", "methodology_report.md", "clinical_report.md", "bias_report.md"]
         for f in old_files:
-            fp = os.path.join(DATASET_DIR, f)
+            fp = os.path.join(run_dir_path, f)
             if os.path.exists(fp):
                 try: os.remove(fp)
                 except Exception: pass
@@ -867,7 +921,7 @@ class State(rx.State):
         yield
         loop = asyncio.get_running_loop()
         task = loop.run_in_executor(None, self.execute_backend_pipeline)
-        log_file_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "dataset", "terminal.log"))
+        log_file_path = os.path.join(run_dir_path, "terminal.log")
         last_pos = 0
         while not task.done():
             if os.path.exists(log_file_path):
@@ -883,6 +937,7 @@ class State(rx.State):
             await asyncio.sleep(0.5)
             
         self.is_running = False
+        self.update_available_runs()
         self.logs.append("Execution Complete!")
         self.load_execution_trace()
         yield DashboardState.load_metrics
@@ -890,7 +945,7 @@ class State(rx.State):
 
     def load_execution_trace(self):
         """Loads routing stats, consensus reports, and matched claims from the execution trace."""
-        trace_path = os.path.join(DATASET_DIR, "execution_trace.json")
+        trace_path = os.path.join(self.run_dir, "execution_trace.json")
         if os.path.exists(trace_path):
             try:
                 trace_data = json.load(open(trace_path, "r", encoding="utf-8"))
@@ -977,11 +1032,11 @@ class State(rx.State):
         import subprocess
         root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
         cli_path = os.path.join(root_dir, "run_pipeline_cli.py")
-        os.makedirs(os.path.join(root_dir, "dataset"), exist_ok=True)
+        os.makedirs(self.run_dir, exist_ok=True)
 
         # Persist research goal for V2 dashboard
         try:
-            with open(os.path.join(root_dir, "dataset", "last_research_goal.txt"), "w", encoding="utf-8") as gf:
+            with open(os.path.join(self.run_dir, "last_research_goal.txt"), "w", encoding="utf-8") as gf:
                 gf.write((self.query or "").strip())
         except Exception:
             pass
@@ -1026,6 +1081,15 @@ class State(rx.State):
                 "think": bool(self.llm_think),
             }
         )
+        # Pass secrets securely via environment variables instead of CLI args
+        env["ENTREZ_EMAIL"] = self.email
+        env["GEMINI_API_KEY"] = self.api_key
+        env["SEMANTIC_SCHOLAR_API_KEY"] = self.sc_api_key
+
+        # Pass active workspace run directory path
+        run_dir_rel = os.path.relpath(self.run_dir, root_dir)
+        env["GRIFFIN_RUN_DIR"] = run_dir_rel
+
         # P0: wire UI controls that previously did nothing
         env["GRIFFIN_FORCE_FRESH"] = "1" if self.force_fresh else "0"
         if forced_agents:
@@ -1038,18 +1102,18 @@ class State(rx.State):
         else:
             env.pop("GRIFFIN_REFINEMENT", None)
 
-        cmd = [sys.executable, cli_path, self.query, self.email, self.api_key, self.sc_api_key]
+        cmd = [sys.executable, cli_path, self.query]
 
         try:
-            with open(os.path.join(root_dir, "dataset", "terminal.log"), "a", encoding="utf-8") as log_file:
+            with open(os.path.join(self.run_dir, "terminal.log"), "a", encoding="utf-8") as log_file:
                 subprocess.run(cmd, cwd=root_dir, check=True, env=env, stdout=log_file, stderr=subprocess.STDOUT)
         except Exception as e:
-            with open(os.path.join(root_dir, "dataset", "terminal.log"), "a", encoding="utf-8") as f:
+            with open(os.path.join(self.run_dir, "terminal.log"), "a", encoding="utf-8") as f:
                 f.write(f"\nPipeline Error: {str(e)}\n")
 
     def load_synthesis(self):
-        path = os.path.join(DATASET_DIR, "consensus_report.md")
-        if not os.path.exists(path): path = os.path.join(DATASET_DIR, "final_synthesis.md")
+        path = os.path.join(self.run_dir, "consensus_report.md")
+        if not os.path.exists(path): path = os.path.join(self.run_dir, "final_synthesis.md")
         if os.path.exists(path):
             with open(path, "r", encoding="utf-8") as f:
                 raw_text = f.read()
@@ -1064,6 +1128,11 @@ class State(rx.State):
         yield
 
         import requests
+        from src.shared.eln_tools import is_safe_eln_url
+        if not is_safe_eln_url(self.eln_url):
+            self.eln_export_status = f"Refused: ELN URL '{self.eln_url}' is not in the allowed list. Only localhost or ALLOWED_ELN_DOMAINS are permitted."
+            self.eln_exporting = False
+            return
         try:
             session = requests.Session()
             login_data = {
@@ -1126,7 +1195,14 @@ class State(rx.State):
         yield
 
         from src.agents.eln_controller_agent import execute_eln_agent
+        from src.shared.eln_tools import is_safe_eln_url
         import asyncio
+        
+        if not is_safe_eln_url(self.eln_url):
+            self.eln_chat_history.append({"role": "assistant", "content": f"⚠️ Refused: ELN URL '{self.eln_url}' is not in the allowed list. Only localhost or ALLOWED_ELN_DOMAINS are permitted."})
+            self.eln_chat_running = False
+            yield
+            return
         
         model = self.global_model_choice if self.use_global_model else self.model_routing.get("experiment_planner", "llama3.1:8b")
         

@@ -13,6 +13,8 @@ Optionally runs `clean_dataset.py` afterward.
 """
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 import argparse
 import os
 import subprocess
@@ -62,10 +64,10 @@ def run_collectors(query: str, args) -> None:
         print(f"Saved {spec.output_path} with {len(df)} records")
 
 
-def merge_and_dedup(output: str, max_results: int | None = None) -> pd.DataFrame:
+def merge_and_dedup(output: str, selected_sources: Iterable[str] | None = None, max_results: int | None = None) -> pd.DataFrame:
     frames = []
 
-    for name, path in source_paths().items():
+    for name, path in source_paths(selected_sources).items():
         if not os.path.exists(path):
             print(f"Source missing: {path} (skipping)")
             continue
@@ -162,7 +164,7 @@ def main() -> None:
 
     parser.add_argument("--max-results", type=int, default=100)
     parser.add_argument("--collector-limits", default="{}", help="JSON string mapping collector names to limits")
-    parser.add_argument("--output", default="dataset/final_papers.csv")
+    parser.add_argument("--output", default=os.path.join(os.environ.get("GRIFFIN_RUN_DIR", "dataset"), "final_papers.csv"))
     parser.add_argument("--run-filter", action="store_true", help="Run clean_dataset.py after saving final_papers.csv")
 
     args = parser.parse_args()
@@ -172,7 +174,7 @@ def main() -> None:
         sys.exit(1)
 
     run_collectors(args.query, args)
-    merge_and_dedup(args.output, max_results=args.max_results)
+    merge_and_dedup(args.output, selected_sources=args.sources, max_results=args.max_results)
 
     if args.run_filter:
         print("Running clean_dataset.py...")

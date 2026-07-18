@@ -77,8 +77,8 @@ def load_embedding_cache(path: str, model_name: str) -> Dict[str, List[float]]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate sentence embeddings for cleaned papers and index into Chroma DB")
-    parser.add_argument("--input", default="dataset/clean_papers.csv")
-    parser.add_argument("--output", default="dataset/clean_papers_with_embeddings.csv")
+    parser.add_argument("--input", default=os.path.join(os.environ.get("GRIFFIN_RUN_DIR", "dataset"), "clean_papers.csv"))
+    parser.add_argument("--output", default=os.path.join(os.environ.get("GRIFFIN_RUN_DIR", "dataset"), "clean_papers_with_embeddings.csv"))
     parser.add_argument("--model", default=DEFAULT_MODEL)
     parser.add_argument("--batch-size", type=int, default=32)
     parser.add_argument("--include-title", action="store_true", help="Include title together with abstract in the embedding text")

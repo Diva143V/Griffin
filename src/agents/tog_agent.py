@@ -15,29 +15,39 @@ logger = logging.getLogger(__name__)
 
 
 def trigger_self_healing_retrieval(term_a: str, term_b: str, model: str = "llama3.1:8b") -> bool:
-    """Invokes the paper collection, ranking, extraction, and sync pipeline for a missing link."""
+    """Invokes the paper collection, ranking, extraction, and sync pipeline for a missing link.
+    
+    Reads ENTREZ_EMAIL from environment. Returns False if the email is not set.
+    """
     search_query = f"{term_a} {term_b}"
     logger.info("Self-Healing: Triggering active collection for '%s'...", search_query)
     
     python_exe = sys.executable
-    email = os.environ.get("ENTREZ_EMAIL", "test@example.com")
+    run_dir = os.environ.get("GRIFFIN_RUN_DIR", "dataset")
+    email = os.environ.get("ENTREZ_EMAIL", "")
+    if not email:
+        logger.error("Self-healing aborted: ENTREZ_EMAIL environment variable is not set.")
+        return False
     
     # Run the collector pipeline steps incrementally
     steps = [
         [python_exe, "build_dataset.py", "--query", search_query, "--max-results", "10", "--run-filter", "--email", email],
-        [python_exe, "generate_embeddings.py", "--input", "dataset/clean_papers.csv", "--output", "dataset/clean_papers_with_embeddings.csv", "--include-title"],
+        [python_exe, "generate_embeddings.py", "--input", os.path.join(run_dir, "clean_papers.csv"), "--output", os.path.join(run_dir, "clean_papers_with_embeddings.csv"), "--include-title"],
         [python_exe, "-m", "src.core.evidence_ranker"],
-        [python_exe, "-m", "src.core.claim_extractor", "--input", "dataset/clean_papers.csv", "--output", "dataset/claims.csv", "--limit", "10", "--model", model],
+        [python_exe, "-m", "src.core.claim_extractor", "--input", os.path.join(run_dir, "clean_papers.csv"), "--output", os.path.join(run_dir, "claims.csv"), "--limit", "10", "--model", model],
         [python_exe, "-m", "src.core.contradiction_detector", "--max-pairs", "10", "--model", model],
         # Run sync_neo4j in incremental mode so it doesn't delete existing data!
         [python_exe, "sync_neo4j.py", "--model", model, "--no-clear"]
     ]
     
+    env = os.environ.copy()
+    env["GRIFFIN_RUN_DIR"] = run_dir
+    
     for cmd in steps:
         try:
             logger.info("Executing self-healing step: %s", " ".join(cmd))
             # Set timeout to 120 seconds to prevent hanging subprocesses
-            subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=120)
+            subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=120, env=env)
             logger.info("Step completed successfully.")
         except subprocess.TimeoutExpired:
             logger.error("Self-healing step timed out: %s", " ".join(cmd))

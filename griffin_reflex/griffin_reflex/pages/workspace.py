@@ -24,15 +24,21 @@ class WorkspaceState(rx.State):
 
     @rx.event
     def load_workspace(self):
-        self.papers = get_papers(limit=24, search=self.paper_search)
-        nodes, edges = get_knowledge_graph()
+        from griffin_reflex.griffin_reflex import State
+        parent = self.get_state(State)
+        run_dir_path = parent.run_dir
+        self.papers = get_papers(limit=24, search=self.paper_search, dataset_dir=run_dir_path)
+        nodes, edges = get_knowledge_graph(dataset_dir=run_dir_path)
         self.kg_nodes = nodes
         self.kg_edges = edges
-        self.timeline = get_timeline_events()
+        self.timeline = get_timeline_events(dataset_dir=run_dir_path)
 
     @rx.event
     def search_papers(self):
-        self.papers = get_papers(limit=24, search=self.paper_search)
+        from griffin_reflex.griffin_reflex import State
+        parent = self.get_state(State)
+        run_dir_path = parent.run_dir
+        self.papers = get_papers(limit=24, search=self.paper_search, dataset_dir=run_dir_path)
 
 def workspace():
     """Premium workspace dashboard page layout"""

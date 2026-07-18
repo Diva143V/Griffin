@@ -183,6 +183,50 @@ def pipeline_indicator():
         )
     )
 
+def workspace_selector():
+    """Workspace selector for choosing the active run subdirectory"""
+    from griffin_reflex.griffin_reflex import State
+    
+    return rx.cond(
+        SidebarState.is_collapsed,
+        rx.tooltip(
+            rx.center(
+                rx.text("📂", font_size="20px"),
+                padding="8px",
+            ),
+            content="Active workspace folder",
+            delay_duration=0,
+        ),
+        rx.vstack(
+            rx.text(
+                "📂 Workspace Run",
+                size="1",
+                color=COLORS["text_secondary"],
+                font_family=FONTS["body"],
+                font_weight="700",
+                letter_spacing="0.12em",
+                text_transform="uppercase",
+                padding_top="2",
+            ),
+            rx.select(
+                State.available_runs,
+                placeholder="Main Workspace",
+                value=State.selected_run,
+                on_change=State.set_selected_run_action,
+                style={
+                    "background": COLORS["surface"],
+                    "color": COLORS["text_primary"],
+                    "border": f"1px solid {COLORS['border_highlight']}",
+                    "borderRadius": "8px",
+                    "width": "100%",
+                }
+            ),
+            width="100%",
+            spacing="1",
+            padding_bottom="2",
+        )
+    )
+
 def sidebar(active: str = ""):
     """Collapsible navigation sidebar with custom interactive trigger"""
     return rx.box(
@@ -280,6 +324,7 @@ def sidebar(active: str = ""):
             rx.spacer(),
             
             # Pipeline and footer indicators
+            workspace_selector(),
             pipeline_indicator(),
             
             rx.cond(

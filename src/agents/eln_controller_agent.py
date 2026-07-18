@@ -179,6 +179,9 @@ def execute_eln_agent(
 
     # 4. Execute the chosen tool
     result_str = ""
+    if action_to_take in ("create_experiment", "update_experiment_comments"):
+        return f"CONFIRM_REQUIRED: {action_to_take} with args {json.dumps(args)}"
+
     try:
         if action_to_take == "list_projects":
             res = client.list_projects()
@@ -189,13 +192,6 @@ def execute_eln_agent(
         elif action_to_take == "list_experiments":
             res = client.list_experiments(args.get("project_id"), args.get("notebook_id"))
             result_str = f"Experiments summary:\n" + json.dumps(res, indent=2)
-        elif action_to_take == "create_experiment":
-            res = client.create_experiment(
-                args.get("project_id"),
-                args.get("notebook_id"),
-                args.get("experiment_name")
-            )
-            result_str = f"Experiment created:\n" + json.dumps(res, indent=2)
         elif action_to_take == "get_experiment":
             res = client.get_experiment(
                 args.get("project_id"),
@@ -203,14 +199,6 @@ def execute_eln_agent(
                 args.get("experiment_id")
             )
             result_str = f"Experiment details:\n" + json.dumps(res, indent=2)
-        elif action_to_take == "update_experiment_comments":
-            res = client.update_experiment_comments(
-                args.get("project_id"),
-                args.get("notebook_id"),
-                args.get("experiment_id"),
-                args.get("comments")
-            )
-            result_str = f"Update status:\n" + json.dumps(res, indent=2)
         else:
             return f"Unknown tool choice: {action_to_take}"
     except Exception as e:

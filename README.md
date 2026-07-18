@@ -27,10 +27,10 @@ flowchart TD
     P --> R[Contradiction detector]
     Q --> R
     R --> S[Final synthesis]
-    S --> T[Streamlit App Dashboard]
-    R --> T
-    Q --> T
-    P --> T
+    S --> U[Reflex Web Application]
+    R --> U
+    Q --> U
+    P --> U
 ```
 
 ## Main Scripts
@@ -63,7 +63,6 @@ flowchart TD
 - `evidence_ranker.py` - classifies papers by Oxford Levels of Evidence, extracts sample sizes, and assigns scores.
 - `contradiction_detector.py` - identifies contradictions from extracted claims using pairwise LLM comparison.
 - `final_synthesis.py` - synthesizes an advanced final report from claims, contradiction records, and evidence quality metrics.
-- `app.py` - launches the premium Streamlit interactive web dashboard to visualize findings.
 
 ## Setup
 
@@ -204,14 +203,14 @@ This is the right place to mix models and agents selectively: keep ingestion det
 
 ## Query Planner & Live Status Callback
 
-The Streamlit app includes a planner tab that turns a user question into a full execution workflow before answering.
+The dashboard includes a workspace planner that turns a user question into a full execution workflow before answering.
 
 - **Routed Queries**: General research questions route to standard RAG, while conflict/agreement questions run graph-aware RAG plus contradiction reviews.
 - **Live Processing Progress**: To keep the interface responsive, a `status_callback` listener updates the dashboard with real-time feedback notices above the loader spinner as each stage executes (e.g. *“Ingesting fresh research papers...”*, *“Retrieving context...”*, *“Generating synthesis (Verification Loop)...”*, *“Designing lab protocol...”*).
 - **RAG Comparison Logging**: The RAG vs. Graph RAG Comparison tab also reports stage-by-stage status live (e.g. standard vs. graph retrieval and generation phases).
 - **LLM Routing & Performance Summary**: An expandable table displays latency statistics, requested vs. resolved models, and warning notes for every stage.
 
-Open the planner tab in `app.py`, enter a query, review the generated steps, and then run the planned query to see the routed answer.
+Open the workspace planner tab in the dashboard, enter a query, review the generated steps, and then run the planned query to see the routed answer.
 
 ## Contradiction detection
 
@@ -260,13 +259,7 @@ Produces:
 - `dataset/final_synthesis.txt` (Plain text report)
 - `dataset/final_synthesis.md` (Markdown report)
 
-## Interactive Dashboard UI
 
-Launch the Streamlit app to explore metrics, synthesis summaries, contradictions list, and ranked clinical datasets:
-
-```powershell
-streamlit run app.py
-```
 
 ## Notes
 

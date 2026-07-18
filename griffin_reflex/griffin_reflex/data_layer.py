@@ -11,7 +11,16 @@ from typing import Any, Dict, List, Tuple
 import pandas as pd
 
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-DATASET_DIR = os.path.join(ROOT_DIR, "dataset")
+
+def get_dataset_dir(dataset_dir: str = None) -> str:
+    if dataset_dir:
+        return dataset_dir
+    run_dir = os.environ.get("GRIFFIN_RUN_DIR")
+    if run_dir:
+        if os.path.isabs(run_dir):
+            return run_dir
+        return os.path.abspath(os.path.join(ROOT_DIR, run_dir))
+    return os.path.join(ROOT_DIR, "dataset")
 
 
 def _safe_len_csv(path: str) -> int:
@@ -23,8 +32,9 @@ def _safe_len_csv(path: str) -> int:
         return 0
 
 
-def _load_contradictions() -> Dict[str, Any]:
-    path = os.path.join(DATASET_DIR, "contradictions.json")
+def _load_contradictions(dataset_dir: str = None) -> Dict[str, Any]:
+    db_dir = get_dataset_dir(dataset_dir)
+    path = os.path.join(db_dir, "contradictions.json")
     if not os.path.exists(path):
         return {}
     try:
@@ -34,15 +44,16 @@ def _load_contradictions() -> Dict[str, Any]:
         return {}
 
 
-def get_dashboard_metrics() -> Dict[str, str]:
+def get_dashboard_metrics(dataset_dir: str = None) -> Dict[str, str]:
     """Live metrics derived from dataset artifacts."""
-    papers = _safe_len_csv(os.path.join(DATASET_DIR, "clean_papers.csv"))
+    db_dir = get_dataset_dir(dataset_dir)
+    papers = _safe_len_csv(os.path.join(db_dir, "clean_papers.csv"))
     if papers == 0:
-        papers = _safe_len_csv(os.path.join(DATASET_DIR, "ranked_papers.csv"))
+        papers = _safe_len_csv(os.path.join(db_dir, "ranked_papers.csv"))
     if papers == 0:
-        papers = _safe_len_csv(os.path.join(DATASET_DIR, "clean_papers_with_embeddings.csv"))
+        papers = _safe_len_csv(os.path.join(db_dir, "clean_papers_with_embeddings.csv"))
 
-    ranked_path = os.path.join(DATASET_DIR, "ranked_papers.csv")
+    ranked_path = os.path.join(db_dir, "ranked_papers.csv")
     avg_score = "—"
     if os.path.exists(ranked_path):
         try:
@@ -58,18 +69,18 @@ def get_dashboard_metrics() -> Dict[str, str]:
         except Exception:
             pass
 
-    contr = _load_contradictions()
+    contr = _load_contradictions(db_dir)
     n_contr = len(contr.get("contradictions", []) or [])
     n_agree = len(contr.get("agreements", []) or [])
     n_partial = len(contr.get("partial_agreements", []) or [])
 
-    claims = _safe_len_csv(os.path.join(DATASET_DIR, "claims.csv"))
+    claims = _safe_len_csv(os.path.join(db_dir, "claims.csv"))
     if claims == 0:
-        claims = _safe_len_csv(os.path.join(DATASET_DIR, "claims_dataset.csv"))
+        claims = _safe_len_csv(os.path.join(db_dir, "claims_dataset.csv"))
 
     # Agents: count which stages appear in last execution trace
     agents = "—"
-    trace_path = os.path.join(DATASET_DIR, "execution_trace.json")
+    trace_path = os.path.join(db_dir, "execution_trace.json")
     if os.path.exists(trace_path):
         try:
             with open(trace_path, "r", encoding="utf-8") as f:
@@ -81,7 +92,7 @@ def get_dashboard_metrics() -> Dict[str, str]:
 
     # Current research goal
     goal = "No active research run yet"
-    goal_path = os.path.join(DATASET_DIR, "last_research_goal.txt")
+    goal_path = os.path.join(db_dir, "last_research_goal.txt")
     if os.path.exists(goal_path):
         try:
             with open(goal_path, "r", encoding="utf-8") as f:
@@ -92,11 +103,11 @@ def get_dashboard_metrics() -> Dict[str, str]:
             pass
 
     pipeline_status = "Idle — run a query from the Planner"
-    if os.path.exists(os.path.join(DATASET_DIR, "consensus_report.md")) or os.path.exists(
-        os.path.join(DATASET_DIR, "final_synthesis.md")
+    if os.path.exists(os.path.join(db_dir, "consensus_report.md")) or os.path.exists(
+        os.path.join(db_dir, "final_synthesis.md")
     ):
         pipeline_status = "Latest synthesis available"
-    if os.path.exists(os.path.join(DATASET_DIR, "execution_trace.json")):
+    if os.path.exists(os.path.join(db_dir, "execution_trace.json")):
         pipeline_status = "Pipeline completed — open Planner for full trace"
 
     progress = 0
@@ -106,8 +117,8 @@ def get_dashboard_metrics() -> Dict[str, str]:
         progress = 45
     if n_contr or n_agree:
         progress = 70
-    if os.path.exists(os.path.join(DATASET_DIR, "consensus_report.md")) or os.path.exists(
-        os.path.join(DATASET_DIR, "final_synthesis.md")
+    if os.path.exists(os.path.join(db_dir, "consensus_report.md")) or os.path.exists(
+        os.path.join(db_dir, "final_synthesis.md")
     ):
         progress = 100
 
@@ -124,12 +135,13 @@ def get_dashboard_metrics() -> Dict[str, str]:
     }
 
 
-def get_papers(limit: int = 24, search: str = "") -> List[Dict[str, str]]:
+def get_papers(limit: int = 24, search: str = "", dataset_dir: str = None) -> List[Dict[str, str]]:
     """Paper cards for the workspace explorer from ranked / clean CSVs."""
+    db_dir = get_dataset_dir(dataset_dir)
     candidates = [
-        os.path.join(DATASET_DIR, "ranked_papers.csv"),
-        os.path.join(DATASET_DIR, "clean_papers_with_embeddings.csv"),
-        os.path.join(DATASET_DIR, "clean_papers.csv"),
+        os.path.join(db_dir, "ranked_papers.csv"),
+        os.path.join(db_dir, "clean_papers_with_embeddings.csv"),
+        os.path.join(db_dir, "clean_papers.csv"),
     ]
     path = next((p for p in candidates if os.path.exists(p)), None)
     if not path:
@@ -171,8 +183,9 @@ def get_papers(limit: int = 24, search: str = "") -> List[Dict[str, str]]:
     return rows
 
 
-def get_knowledge_graph() -> Tuple[List[Dict[str, str]], List[Dict[str, str]]]:
+def get_knowledge_graph(dataset_dir: str = None) -> Tuple[List[Dict[str, str]], List[Dict[str, str]]]:
     """Nodes/edges derived from contradiction pairs (real claim titles) or Neo4j database."""
+    db_dir = get_dataset_dir(dataset_dir)
     # Try querying Neo4j first
     try:
         from src.core.neo4j_client import Neo4jClient
@@ -218,7 +231,7 @@ def get_knowledge_graph() -> Tuple[List[Dict[str, str]], List[Dict[str, str]]]:
         pass
 
     # JSON File Fallback
-    data = _load_contradictions()
+    data = _load_contradictions(db_dir)
     nodes: Dict[str, Dict[str, str]] = {}
     edges: List[Dict[str, str]] = []
 
@@ -238,7 +251,7 @@ def get_knowledge_graph() -> Tuple[List[Dict[str, str]], List[Dict[str, str]]]:
 
     if not nodes:
         # Fallback: sample paper titles as isolated nodes
-        papers = get_papers(limit=8)
+        papers = get_papers(limit=8, dataset_dir=db_dir)
         for p in papers:
             t = p["title"][:50]
             nodes[t] = {"id": t, "label": t, "type": "Paper"}
@@ -247,12 +260,13 @@ def get_knowledge_graph() -> Tuple[List[Dict[str, str]], List[Dict[str, str]]]:
     return list(nodes.values())[:24], edges[:30]
 
 
-def get_timeline_events() -> List[Dict[str, str]]:
+def get_timeline_events(dataset_dir: str = None) -> List[Dict[str, str]]:
     """Year-bucketed research evolution from paper years + contradiction milestones."""
+    db_dir = get_dataset_dir(dataset_dir)
     events: List[Dict[str, str]] = []
 
     # From papers
-    papers = get_papers(limit=200)
+    papers = get_papers(limit=200, dataset_dir=db_dir)
     by_year: Dict[str, int] = {}
     for p in papers:
         y = str(p.get("year") or "").strip()
@@ -267,7 +281,7 @@ def get_timeline_events() -> List[Dict[str, str]]:
         )
 
     # From contradictions file timestamps if present (use counts as milestones)
-    contr = _load_contradictions()
+    contr = _load_contradictions(db_dir)
     n_c = len(contr.get("contradictions", []) or [])
     n_a = len(contr.get("agreements", []) or [])
     if n_c or n_a:
@@ -288,14 +302,16 @@ def get_timeline_events() -> List[Dict[str, str]]:
     return events
 
 
-def save_research_goal(goal: str) -> None:
-    os.makedirs(DATASET_DIR, exist_ok=True)
-    with open(os.path.join(DATASET_DIR, "last_research_goal.txt"), "w", encoding="utf-8") as f:
+def save_research_goal(goal: str, dataset_dir: str = None) -> None:
+    db_dir = get_dataset_dir(dataset_dir)
+    os.makedirs(db_dir, exist_ok=True)
+    with open(os.path.join(db_dir, "last_research_goal.txt"), "w", encoding="utf-8") as f:
         f.write((goal or "").strip())
 
 
-def load_research_goal() -> str:
-    path = os.path.join(DATASET_DIR, "last_research_goal.txt")
+def load_research_goal(dataset_dir: str = None) -> str:
+    db_dir = get_dataset_dir(dataset_dir)
+    path = os.path.join(db_dir, "last_research_goal.txt")
     if not os.path.exists(path):
         return ""
     try:

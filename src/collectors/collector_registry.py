@@ -5,6 +5,7 @@ independent add-ons while still keeping a stable merge order and output paths.
 """
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, List, Mapping
 
@@ -32,10 +33,14 @@ class CollectorSpec:
     runner: Callable[[str, Any], pd.DataFrame]
 
 
+def _get_path(f_name: str) -> str:
+    return os.path.join(os.environ.get("GRIFFIN_RUN_DIR", "dataset"), f_name)
+
+
 DEFAULT_COLLECTORS: Dict[str, CollectorSpec] = {
     "PubMed": CollectorSpec(
         name="PubMed",
-        output_path="dataset/pubmed.csv",
+        output_path=_get_path("pubmed.csv"),
         priority=0,
         description="PubMed Entrez collector",
         runner=lambda query, args: collect_pubmed(
@@ -48,7 +53,7 @@ DEFAULT_COLLECTORS: Dict[str, CollectorSpec] = {
     ),
     "PMC": CollectorSpec(
         name="PMC",
-        output_path="dataset/pmc.csv",
+        output_path=_get_path("pmc.csv"),
         priority=1,
         description="Europe PMC collector",
         runner=lambda query, args: collect_pmc(
@@ -61,7 +66,7 @@ DEFAULT_COLLECTORS: Dict[str, CollectorSpec] = {
     ),
     "SemanticScholar": CollectorSpec(
         name="SemanticScholar",
-        output_path="dataset/semantic_scholar.csv",
+        output_path=_get_path("semantic_scholar.csv"),
         priority=2,
         description="Semantic Scholar collector",
         runner=lambda query, args: collect_semanticscholar(
@@ -74,7 +79,7 @@ DEFAULT_COLLECTORS: Dict[str, CollectorSpec] = {
     ),
     "OpenAlex": CollectorSpec(
         name="OpenAlex",
-        output_path="dataset/openalex.csv",
+        output_path=_get_path("openalex.csv"),
         priority=3,
         description="OpenAlex collector",
         runner=lambda query, args: collect_openalex(
@@ -87,7 +92,7 @@ DEFAULT_COLLECTORS: Dict[str, CollectorSpec] = {
     ),
     "ClinicalTrials": CollectorSpec(
         name="ClinicalTrials",
-        output_path="dataset/clinicaltrials.csv",
+        output_path=_get_path("clinicaltrials.csv"),
         priority=4,
         description="ClinicalTrials.gov collector",
         runner=lambda query, args: collect_clinicaltrials(
@@ -99,7 +104,7 @@ DEFAULT_COLLECTORS: Dict[str, CollectorSpec] = {
     ),
     "bioRxiv": CollectorSpec(
         name="bioRxiv",
-        output_path="dataset/biorxiv.csv",
+        output_path=_get_path("biorxiv.csv"),
         priority=5,
         description="bioRxiv preprint collector",
         runner=lambda query, args: collect_biorxiv(
@@ -110,7 +115,7 @@ DEFAULT_COLLECTORS: Dict[str, CollectorSpec] = {
     ),
     "ChEMBL": CollectorSpec(
         name="ChEMBL",
-        output_path="dataset/chembl.csv",
+        output_path=_get_path("chembl.csv"),
         priority=6,
         description="ChEMBL bioactive molecule collector",
         runner=lambda query, args: collect_chembl(
@@ -121,7 +126,7 @@ DEFAULT_COLLECTORS: Dict[str, CollectorSpec] = {
     ),
     "UniProt": CollectorSpec(
         name="UniProt",
-        output_path="dataset/uniprot.csv",
+        output_path=_get_path("uniprot.csv"),
         priority=7,
         description="UniProt protein collector",
         runner=lambda query, args: collect_uniprot(
@@ -132,7 +137,7 @@ DEFAULT_COLLECTORS: Dict[str, CollectorSpec] = {
     ),
     "PubChem": CollectorSpec(
         name="PubChem",
-        output_path="dataset/pubchem.csv",
+        output_path=_get_path("pubchem.csv"),
         priority=8,
         description="PubChem chemical properties collector",
         runner=lambda query, args: collect_pubchem(
@@ -143,7 +148,7 @@ DEFAULT_COLLECTORS: Dict[str, CollectorSpec] = {
     ),
     "dbSNP": CollectorSpec(
         name="dbSNP",
-        output_path="dataset/dbsnp.csv",
+        output_path=_get_path("dbsnp.csv"),
         priority=9,
         description="NCBI dbSNP genetic variant collector",
         runner=lambda query, args: collect_dbsnp(
@@ -155,7 +160,7 @@ DEFAULT_COLLECTORS: Dict[str, CollectorSpec] = {
     ),
     "DuckDuckGo": CollectorSpec(
         name="DuckDuckGo",
-        output_path="dataset/duckduckgo.csv",
+        output_path=_get_path("duckduckgo.csv"),
         priority=10,
         description="DuckDuckGo web search collector",
         runner=lambda query, args: collect_duckduckgo(

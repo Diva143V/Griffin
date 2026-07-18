@@ -33,7 +33,7 @@ MODEL_ROUTING = {
 }
 
 # --- Core Paths ---
-DATASET_DIR = "dataset"
+DATASET_DIR = os.environ.get("GRIFFIN_RUN_DIR", "dataset")
 FINAL_PAPERS_PATH = os.path.join(DATASET_DIR, "final_papers.csv")
 CLEAN_PAPERS_PATH = os.path.join(DATASET_DIR, "clean_papers.csv")
 EMBEDDINGS_PATH = os.path.join(DATASET_DIR, "clean_papers_with_embeddings.csv")

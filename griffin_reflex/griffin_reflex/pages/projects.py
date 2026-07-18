@@ -14,12 +14,15 @@ class ProjectsState(rx.State):
 
     @rx.event
     def load_projects(self):
-        m = get_dashboard_metrics()
-        self.goal = load_research_goal() or m.get("goal", "")
+        from griffin_reflex.griffin_reflex import State
+        parent = self.get_state(State)
+        run_dir_path = parent.run_dir
+        m = get_dashboard_metrics(run_dir_path)
+        self.goal = load_research_goal(run_dir_path) or m.get("goal", "")
         self.papers = m["papers"]
         self.contradictions = m["contradictions"]
         self.status = m["pipeline_status"]
-        self.has_trace = os.path.exists(os.path.join(DATASET_DIR, "execution_trace.json"))
+        self.has_trace = os.path.exists(os.path.join(run_dir_path, "execution_trace.json"))
 
 def projects():
     """Redesigned local scientific lab workspaces list view"""
