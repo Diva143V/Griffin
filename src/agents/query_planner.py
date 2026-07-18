@@ -214,7 +214,7 @@ Clean Keywords:"""
         return safe_clean(raw_query)
 
 
-def run_pipeline_ingestion(query: str, email: str = "test@example.com", api_key: str = "", model_name: str = "llama3.1:8b", top_k: int = 20, collector_limits: Optional[Dict[str, int]] = None) -> List[str]:
+def run_pipeline_ingestion(query: str, email: str | None = None, api_key: str = "", model_name: str = "llama3.1:8b", top_k: int = 20, collector_limits: Optional[Dict[str, int]] = None) -> List[str]:
     """Run build_dataset, generate_embeddings, and evidence_ranker to ingest data with error boundaries."""
     logs = []
     
@@ -228,6 +228,9 @@ def run_pipeline_ingestion(query: str, email: str = "test@example.com", api_key:
     if api_key:
         sources.append("SemanticScholar")
         os.environ["SEMANTIC_SCHOLAR_API_KEY"] = api_key
+        
+    if not email:
+        email = os.environ.get("ENTREZ_EMAIL", "")
         
     os.environ["ENTREZ_EMAIL"] = email
 
@@ -264,6 +267,7 @@ def run_pipeline_ingestion(query: str, email: str = "test@example.com", api_key:
         except Exception as e:
             logs.append(f"Data collection failed: {e}")
             log_file.write(f"\nData collection failed: {e}\n")
+            raise RuntimeError(f"Data collection failed: {e}") from e
 
         # 2. generate_embeddings
         try:
@@ -276,6 +280,7 @@ def run_pipeline_ingestion(query: str, email: str = "test@example.com", api_key:
         except Exception as e:
             logs.append(f"Embedding generation failed: {e}")
             log_file.write(f"\nEmbedding generation failed: {e}\n")
+            raise RuntimeError(f"Embedding generation failed: {e}") from e
 
         # 3. evidence_ranker
         try:
@@ -286,6 +291,7 @@ def run_pipeline_ingestion(query: str, email: str = "test@example.com", api_key:
         except Exception as e:
             logs.append(f"Evidence quality ranking failed: {e}")
             log_file.write(f"\nEvidence quality ranking failed: {e}\n")
+            raise RuntimeError(f"Evidence quality ranking failed: {e}") from e
         
     return logs
 
@@ -342,7 +348,7 @@ def execute_query_plan(
     claims_df: Optional[pd.DataFrame],
     contradictions: Dict[str, Any],
     similarity_threshold: float = 0.60,
-    email: str = "test@example.com",
+    email: str | None = None,
     api_key: str = "",
     forced_agents: Optional[List[str]] = None,
     force_fresh: bool = False,
@@ -351,6 +357,8 @@ def execute_query_plan(
     status_callback: Optional[Callable[[str], None]] = None,
     llm_options: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
+    if not email:
+        email = os.environ.get("ENTREZ_EMAIL", "")
     # Resolve routing config
     default_routing = {
         "planner": "llama3.1:8b",
@@ -472,7 +480,9 @@ def execute_query_plan(
                     ranked_df["embedding"] = ranked_df["embedding"].apply(parse_emb)
             notes.append("Dynamic ingestion completed successfully.")
         except Exception as e:
-            notes.append(f"Dynamic ingestion failed: {e}. Proceeding with existing data.")
+            notes.append(f"Dynamic ingestion failed: {e}.")
+            if ranked_df is None or ranked_df.empty:
+                raise RuntimeError(f"Dynamic Ingestion failed: {e}. No cached or local scientific literature available to analyze.") from e
 
     else:
         # Check if ranked_df is empty or None, load it or rebuild from Chroma DB

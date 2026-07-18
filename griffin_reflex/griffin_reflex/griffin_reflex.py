@@ -331,7 +331,7 @@ class State(rx.State):
     query: str = ""
     api_key: str = ""
     sc_api_key: str = ""
-    email: str = "test@example.com"
+    email: str = os.getenv("ENTREZ_EMAIL", "")
     
     gemini_model_list: list[str] = ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-1.5-pro-latest", "gemini-1.5-flash-latest"]
     gemini_model_choice: str = "gemini-1.5-pro"
@@ -466,7 +466,7 @@ class State(rx.State):
     eln_entry: str = ""
     eln_url: str = "http://localhost:9000"
     eln_username: str = "admin"
-    eln_password: str = "admin"
+    eln_password: str = os.getenv("ELN_PASSWORD", "admin")
     eln_project_id: str = "1"
     eln_notebook_id: str = "2"
     eln_exporting: bool = False

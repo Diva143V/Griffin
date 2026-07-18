@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 NEO4J_URI = os.getenv("NEO4J_URI", "bolt://localhost:7687")
 NEO4J_USERNAME = os.getenv("NEO4J_USERNAME", "neo4j")
-NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "password")
+NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "")
 
 
 class Neo4jClient:

@@ -1183,7 +1183,7 @@ model_choice = installed_models[0] if installed_models else "koesn/llama3-openbi
 st.sidebar.subheader("🔑 Credentials & Settings")
 pubmed_email = st.sidebar.text_input(
     "PubMed / Entrez Email:",
-    value="test@example.com",
+    value=os.getenv("ENTREZ_EMAIL", ""),
     help="Required for Entrez API requests to PubMed/PMC.",
     key="pubmed_email_input"
 )
@@ -1367,7 +1367,7 @@ st.sidebar.markdown("### 🕸️ Neo4j Knowledge Graph")
 with st.sidebar.expander("Neo4j Stack Options", expanded=True):
     neo4j_uri = st.text_input("Neo4j URI:", value=os.getenv("NEO4J_URI", "bolt://localhost:7687"), key="neo4j_uri_input")
     neo4j_user = st.text_input("Neo4j User:", value=os.getenv("NEO4J_USERNAME", "neo4j"), key="neo4j_user_input")
-    neo4j_pass = st.text_input("Neo4j Password:", value=os.getenv("NEO4J_PASSWORD", "password"), type="password", key="neo4j_pass_input")
+    neo4j_pass = st.text_input("Neo4j Password:", value=os.getenv("NEO4J_PASSWORD", ""), type="password", key="neo4j_pass_input")
     
     # Update environment variables so that client connects with these details
     os.environ["NEO4J_URI"] = neo4j_uri
